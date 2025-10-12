@@ -1,4 +1,4 @@
-const DEFAULT_URL = "https://ec96591f5e9e3d50c5392e2939296f7d.serveo.net";
+const DEFAULT_URL = "";
 
 async function request(endpoint: string, method: string = "get", data?: any) {
   const url = `${DEFAULT_URL}/api/${endpoint}`;
@@ -38,3 +38,4 @@ async function request(endpoint: string, method: string = "get", data?: any) {
 }
 
 export default request;
+
