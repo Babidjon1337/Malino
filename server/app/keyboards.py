@@ -1,0 +1,169 @@
+from aiogram.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+    WebAppInfo,
+)
+from urllib.parse import quote
+
+from config import WEB_APP_URL
+
+menu_start = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text="🌙 Сонник", callback_data="sleep")],
+        [InlineKeyboardButton(text="🃏 Расклад таро", callback_data="tarot")],
+        [InlineKeyboardButton(text="📅 Карта дня", callback_data="card_day")],
+    ]
+)
+
+btn_card_day = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text="Получить карту дня 🌞", callback_data="card_day_reminder"
+            )
+        ],
+    ]
+)
+
+# Клавиатура для напоминания пользователям с подпиской
+btn_reminder_subscription = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text="🃏 Расклад таро", callback_data="tarot")],
+        [InlineKeyboardButton(text="🌙 Сонник", callback_data="sleep")],
+    ]
+)
+# Клавиатура для напоминания, когда есть таро-гаданий
+btn_tarot_from_reminder = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text="🃏 Задать вопрос", callback_data="tarot_reminder")]
+    ]
+)
+
+# Клавиатура для напоминания, когда нет таро-гаданий
+btn_more_info_from_reminder = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text="✨ Узнать больше", callback_data="learn_more")]
+    ]
+)
+
+btn_attempts = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text="🎁 Получи ещё 1 бесплатное гадание", callback_data="bonus_url"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="✨ Пробная подписка на сутки за 99 ₽",
+                callback_data="create_subscription_99",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="💎 Безлимит на месяц за 799 ₽",
+                callback_data="create_subscription_799",
+            )
+        ],
+    ]
+)
+btn_create_subscription_99_or_799 = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text="🔮 Пробная подписка на сутки за 99 ₽",
+                callback_data="create_subscription_99",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="🚀 Безлимит на месяц за 799 ₽",
+                callback_data="create_subscription_799",
+            )
+        ],
+    ]
+)
+
+
+def bonus_url(telegram_id: str):
+    copy_text = f"Присоединяйся к Malina Bot:\n\nhttps://t.me/malina_ezo_bot?start={telegram_id}"
+    share_url = f"https://t.me/share/url?url={quote(copy_text)}"
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📤 Отправить другу", url=share_url)],
+        ]
+    )
+
+
+def subscription_payment(payment_link: str):
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="💳 Перейти к оплате", url=payment_link)],
+        ]
+    )
+
+
+btn_management_subscription = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text="🔄 Изменить автопродление",
+                callback_data="management_subscription",
+            )
+        ],
+    ]
+)
+
+
+def webapp_button(question: str, message_id: str):
+    # Кодируем вопрос для безопасной передачи в URL
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔮 Выбрать карты",
+                    web_app=WebAppInfo(
+                        url=f"{WEB_APP_URL}?question={question}&message_id={message_id}"
+                    ),
+                )
+            ],
+        ],
+    )
+
+
+def get_dis_keyboard(
+    agreed_to_offer: bool, agreed_to_public_offer: bool
+) -> InlineKeyboardMarkup:
+    """
+    Создает клавиатуру для команды /dis с кнопками "согласие с офертой" и "согласие публичная офрта".
+    Отображает галочки, если пользователь согласился.
+
+    :param agreed_to_offer: True, если пользователь согласился с офертой.
+    :param agreed_to_public_offer: True, если пользователь согласился с публичной офертой.
+    :return: InlineKeyboardMarkup.
+    """
+    keyboard = []
+
+    # Кнопка "согласие с офертой"
+    offer_text = f"{'✅ ' if agreed_to_offer else ''}согласие с офертой"
+    keyboard.append(
+        [InlineKeyboardButton(text=offer_text, callback_data="agree_offer")]
+    )
+
+    # Кнопка "согласие публичная офрта"
+    public_offer_text = (
+        f"{'✅ ' if agreed_to_public_offer else ''}согласие публичная офрта"
+    )
+    keyboard.append(
+        [
+            InlineKeyboardButton(
+                text=public_offer_text, callback_data="agree_public_offer"
+            )
+        ]
+    )
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)

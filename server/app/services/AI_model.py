@@ -1,0 +1,115 @@
+import re
+import logging
+from openai import *
+import asyncio
+
+from config import AI_TOKEN
+from app.others.text_message import prompt_data
+
+
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
+
+client = AsyncClient(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=AI_TOKEN,
+)
+
+
+async def generate_response(text, prompt):
+    max_retries = 4  # Всего 4 попытки
+    for attempt in range(max_retries):
+        try:
+            system_prompt = prompt_data[prompt]
+
+            completion = await client.chat.completions.create(
+                model="qwen/qwen3-235b-a22b:free",
+                # model="deepseek/deepseek-chat-v3.1:free",
+                # model="deepseek/deepseek-chat-v3-0324:free",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": system_prompt,
+                    },
+                    {
+                        "role": "user",
+                        "content": text,
+                    },
+                ],
+                extra_body={
+                    "provider": {
+                        "order": ["Chutes"],
+                        "allow_fallbacks": False,
+                    },
+                },
+                # КРИТИЧЕСКИЕ ПАРАМЕТРЫ ДЛЯ КОНТРОЛЯ ФОРМАТА
+                # max_tokens=(
+                #     350 if prompt == "sleep" else 220
+                # ),  # Устанавливает максимальное количество токенов (слов/частей слов)
+                temperature=0.5,  # Минимум креативности
+                # frequency_penalty=0.2,  # Штрафует модель за повторение одних и тех же слов
+                # presence_penalty=0.3,  # Поощряет модель вводить новые темы и идеи
+            )
+            if completion is None:
+                logger.error("OpenRouter API вернул None")
+                if attempt < max_retries - 1:
+                    continue
+                return "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
+
+            if not completion.choices:
+                logger.error("Список choices пуст в ответе API")
+                if attempt < max_retries - 1:
+                    continue
+                return "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
+
+            response = completion.choices[0].message.content
+
+            response = (
+                response.replace("<br>", "\n")
+                .replace("<br/>", "\n")
+                .replace("<br />", "\n")
+            )
+            # Проверка на символы <think>...</think>
+            if "<think>" in response:
+                return re.sub(
+                    r"<think>.*?</think>", "", response, flags=re.DOTALL | re.IGNORECASE
+                ).strip()
+
+            # Проверяем, что completion не None и содержит ожидаемую структуру
+            # fmt: off
+            if not response or not isinstance(response, str) or len(response.strip()) == 0:
+            # fmt: on
+                logger.error("OpenRouter API возвращенная структура неожиданного ответа")
+                return "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
+        
+            return response
+
+        except RateLimitError as e:
+            if attempt < max_retries - 1:  # Не ждем после последней попытки
+                wait_time = 2 ** (attempt + 3)  # 8, 16, 32, 64 секунды
+                logger.warning(
+                    f"Лимит запросов. Ждем {wait_time} секунд перед повторной попыткой..."
+                )
+                await asyncio.sleep(wait_time)
+                continue
+            else:
+                print(
+                    "Слишком много запросов. Пожалуйста, попробуйте через несколько минут."
+                )
+                return "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
+        except AttributeError as e:
+            if "'NoneType' object" in str(e):
+                logger.error(
+                    f"Обнаружена ошибка NoneType на попытке {attempt + 1}: {e}"
+                )
+                if attempt < max_retries - 1:
+                    continue
+                return "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
+            else:
+                raise e
+        except Exception as e:
+            logger.error(f"Ошибка при запросе к OpenRouter: {str(e)}")
+            return "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
