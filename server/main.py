@@ -31,8 +31,6 @@ import app.keyboards as kb
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Инициализация CloudPayments сервиса
-
 
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
@@ -84,9 +82,6 @@ app = FastAPI(lifespan=lifespan)
 # Добавляем CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    # allow_origins=[
-    #     ["https://malinaezo.ru", "https://www.malinaezo.ru"]
-    # ],  # В production лучше указать конкретные origins
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
@@ -274,3 +269,4 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run("main:app", host="0.0.0.0", port=PORT, reload=True)
+
