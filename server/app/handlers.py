@@ -15,7 +15,6 @@ from app.others.text_message import *
 import app.services.AI_model as AI
 import app.keyboards as kb
 import app.database.requests as rq
-from config import AMOUNT_1, AMOUNT_2
 
 
 logging.basicConfig(level=logging.INFO)
@@ -409,12 +408,12 @@ async def command_subscription(message: Message, state: FSMContext):
         await message.answer(
             subscription_text,
             disable_web_page_preview=True,
-            reply_markup=kb.btn_create_subscription_99_or_799,
+            reply_markup=kb.btn_create_subscription_99_or_990,
         )
 
 
 @router.callback_query(
-    F.data.in_(["create_subscription_99", "create_subscription_799"])
+    F.data.in_(["create_subscription_99", "create_subscription_990"])
 )
 @handle_old_queries()
 async def callback_create_subscription(callback: CallbackQuery, state: FSMContext):
@@ -422,9 +421,9 @@ async def callback_create_subscription(callback: CallbackQuery, state: FSMContex
     await state.clear()
 
     subscription_text = (
-        subscription_text_1
+        subscription_text_99
         if callback.data == "create_subscription_99"
-        else subscription_text_2
+        else subscription_text_990
     )
 
     user_id = callback.from_user.id
@@ -647,7 +646,7 @@ async def proceed_to_payment(callback: CallbackQuery, state: FSMContext, user_id
         subscription_text = (
             subscription_text_99
             if data_subscription_text == "create_subscription_99"
-            else subscription_text_799
+            else subscription_text_990
         )
         # Меняем текст сообщения
         sent_message = await callback.message.edit_text(
@@ -700,7 +699,7 @@ async def message_email(message: Message, state: FSMContext):
         amount = (
             "99.00"
             if "Пробная подписка — 99 ₽ / 24 часа" in payment_message.text
-            else "799.00"
+            else "990.00"
         )
 
         # Создаем ссылку на оплату

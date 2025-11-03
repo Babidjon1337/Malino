@@ -99,11 +99,18 @@ class TaskScheduler:
             logger.info(f"Начинаем обработку списания для пользователя {telegram_id}")
             user_subscription = await rq.get_user_subscription(telegram_id)
 
+            tariff: str = user_subscription.tariff
+            amount_str = tariff.split("(")[1].split(")")[0]  # Получаем "799"
+            amount = (
+                "990.00" if amount_str == "99" else f"{amount_str}.00"
+            )  # Получаем "799.00"
+
             if user_subscription.is_recurring:
                 await yookassa_service.create_recurring_payment(
                     user_id=telegram_id,
                     payment_method_id=user_subscription.payment_method_id,
                     email=user_subscription.email,
+                    amount=amount,
                 )
                 logger.info(f"Списание выполнено для пользователя {telegram_id}")
             else:

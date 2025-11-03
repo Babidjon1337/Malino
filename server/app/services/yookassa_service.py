@@ -3,7 +3,7 @@ import uuid
 from yookassa import Configuration, Payment
 from yookassa.domain.exceptions import BadRequestError
 
-from config import YOOKASSA_SHOP_ID, YOOKASSA_SECRET_KEY, AMOUNT_1, AMOUNT_2
+from config import YOOKASSA_SHOP_ID, YOOKASSA_SECRET_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +119,7 @@ class YooKassaService:
         try:
             payment_data = {
                 "amount": {
-                    "value": "799.00",
+                    "value": amount,
                     "currency": "RUB",
                 },
                 "capture": True,
@@ -128,6 +128,7 @@ class YooKassaService:
                 "metadata": {
                     "user_id": user_id,
                     "email": email,
+                    "recurrent": True,
                 },
                 "receipt": {
                     "customer": {
@@ -138,7 +139,7 @@ class YooKassaService:
                             "description": "🔮 Подписка на безлимит Malina",
                             "quantity": 1.000,
                             "amount": {
-                                "value": "799.00",
+                                "value": amount,
                                 "currency": "RUB",
                             },
                             "vat_code": 1,

@@ -169,7 +169,7 @@ async def yookassa_webhook(request: Request):
         payment_status = payment_data.get("status")
         metadata = payment_data.get("metadata", {})
         amount = payment_data.get("amount").get("value")
-        print(amount)
+        recurrent = metadata.get("recurrent")
         # Извлекаем metadata из платежа
         telegram_id = metadata.get("user_id")
         massage_id = metadata.get("message_id")
@@ -179,7 +179,7 @@ async def yookassa_webhook(request: Request):
         payment_method_id = payment_data.get("payment_method", {}).get("id")
 
         logger.info(
-            f"Обработка события: {event_type}, платеж: {payment_id}, статус: {payment_status}"
+            f"Обработка события: {event_type}, платеж: {payment_id}, цена: {amount}, статус: {payment_status}"
         )
 
         if event_type == "payment.succeeded":
@@ -202,12 +202,13 @@ async def yookassa_webhook(request: Request):
                             today.year,
                             today.month,
                         )
-                        if amount == "799.00":
+                        if amount == "99.00":
+                            end_date = (today + timedelta(days=1)).strftime("%d.%m.%Y")
+
+                        else:
                             end_date = (today + timedelta(days=days_in_month)).strftime(
                                 "%d.%m.%Y"
                             )
-                        else:
-                            end_date = (today + timedelta(days=1)).strftime("%d.%m.%Y")
 
                         await bot.edit_message_text(
                             chat_id=telegram_id,
@@ -253,7 +254,8 @@ async def yookassa_webhook(request: Request):
         elif event_type == "payment.canceled":
             # Платеж отменен
             logger.info(f"Платеж отменен: {payment_id}")
-            await rq.update_cansel_subscription(telegram_id)
+            if recurrent:
+                await rq.update_cansel_subscription(telegram_id)
 
         else:
             logger.info(f"Получено неизвестное событие {event_type}: {payment_id}")
@@ -269,4 +271,3 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run("main:app", host="0.0.0.0", port=PORT, reload=True)
-

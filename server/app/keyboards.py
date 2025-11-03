@@ -63,13 +63,13 @@ btn_attempts = InlineKeyboardMarkup(
         ],
         [
             InlineKeyboardButton(
-                text="💎 Безлимит на месяц за 799 ₽",
-                callback_data="create_subscription_799",
+                text="💎 Безлимит на месяц за 990 ₽",
+                callback_data="create_subscription_990",
             )
         ],
     ]
 )
-btn_create_subscription_99_or_799 = InlineKeyboardMarkup(
+btn_create_subscription_99_or_990 = InlineKeyboardMarkup(
     inline_keyboard=[
         [
             InlineKeyboardButton(
@@ -79,8 +79,8 @@ btn_create_subscription_99_or_799 = InlineKeyboardMarkup(
         ],
         [
             InlineKeyboardButton(
-                text="🚀 Безлимит на месяц за 799 ₽",
-                callback_data="create_subscription_799",
+                text="🚀 Безлимит на месяц за 990 ₽",
+                callback_data="create_subscription_990",
             )
         ],
     ]

@@ -184,10 +184,12 @@ async def create_subscription(
             today.year,
             today.month,
         )
-        if amount == "799.00":
-            end_date = today + timedelta(days=days_in_month)
-        else:
+        if amount == "99.00":
             end_date = today + timedelta(days=1)
+        else:
+            end_date = today + timedelta(days=days_in_month)
+
+        tariff_str = f"subscription({amount.split('.')[0]})"
 
         if subscription:
             # Обновляем существующую подписку
@@ -195,7 +197,7 @@ async def create_subscription(
                 update(Subscription)
                 .where(Subscription.telegram_id == telegram_id)
                 .values(
-                    tariff="subscription",
+                    tariff=tariff_str,
                     is_recurring=True,
                     payment_method_id=payment_method_id,
                     end_date=end_date,  # Подписка на 30 дней
@@ -209,7 +211,7 @@ async def create_subscription(
             session.add(
                 Subscription(
                     telegram_id=telegram_id,
-                    tariff="subscription",
+                    tariff=tariff_str,
                     is_recurring=True,
                     payment_method_id=payment_method_id,
                     end_date=end_date,
@@ -308,7 +310,7 @@ async def update_recurring_subscription() -> list[Subscription]:
                     Subscription.end_date >= today_start,
                     Subscription.end_date <= today_end,
                     or_(
-                        Subscription.tariff == "subscription",
+                        Subscription.tariff.like("subscription%"),
                         Subscription.tariff == "gift",
                     ),
                 )
@@ -332,7 +334,7 @@ async def update_recurring_subscription_now() -> list[Subscription]:
                     Subscription.end_date >= today_start,
                     Subscription.end_date <= today_end,
                     or_(
-                        Subscription.tariff == "subscription",
+                        Subscription.tariff.like("subscription%"),
                         Subscription.tariff == "gift",
                     ),
                 )
@@ -360,9 +362,7 @@ async def get_statistics() -> tuple[int, int]:
 
         # Количество всех подписок
         subscription_count_result = await session.execute(
-            select(func.count(Subscription.telegram_id)).where(
-                Subscription.tariff == "subscription"
-            )
+            select(func.count(User.telegram_id)).where(User.tariff == "subscription")
         )
         count_subscription = subscription_count_result.scalar()
 
@@ -379,7 +379,7 @@ async def get_CardDay_10am() -> list[User]:
 
 
 async def get_all_users(
-    tariffs: list = ["gift", "free", "subscription", "subscription(799)", "VIP"]
+    tariffs: list = ["gift", "free", "subscription", "VIP"]
 ) -> list[User]:
     async with async_session() as session:
         return (

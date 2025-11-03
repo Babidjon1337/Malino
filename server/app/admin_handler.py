@@ -163,7 +163,7 @@ async def callback_to_send_all_users(callback: CallbackQuery, state: FSMContext)
                     return
 
                 success_count += 1
-                await asyncio.sleep(0.09)  # Задержка чтобы не превысить лимиты Telegram
+                await asyncio.sleep(0.05)  # Задержка чтобы не превысить лимиты Telegram
 
             except Exception:
                 fail_count += 1
