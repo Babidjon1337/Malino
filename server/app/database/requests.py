@@ -1,7 +1,9 @@
+import re
 import calendar
 import logging
-from sqlalchemy import select, update, delete, and_, join, func
+from sqlalchemy import select, update, delete, and_, or_, func
 from datetime import datetime, timedelta
+from dateutil.relativedelta import relativedelta
 
 from app.database.models import User, Subscription, async_session
 
@@ -9,28 +11,85 @@ from app.database.models import User, Subscription, async_session
 logger = logging.getLogger(__name__)
 
 
-async def add_user(telegram_id: int, user_name: str, args: int) -> None:
-    async with async_session() as session:
+def extract_months(gift: str) -> int:
+    """Извлекает количество месяцев из gift-строки"""
+    match = re.search(r"gift-(\d*)month", gift)
+    if match:
+        number_str = match.group(1)
+        return int(number_str) if number_str else 1
+    return 1
 
+
+async def add_user(telegram_id: int, user_name: str, args: str | None) -> None:
+    async with async_session() as session:
+        # Проверяем, существует ли пользователь
         user = await session.scalar(select(User).where(User.telegram_id == telegram_id))
 
         if not user:
-            session.add(
-                User(
-                    telegram_id=telegram_id,
-                    user_name=user_name,
-                    referrar_by=args,
+            # Обрабатываем разные сценарии args
+            if args is None:
+                # Обычная регистрация без рефера и без подарка
+                session.add(
+                    User(
+                        telegram_id=telegram_id,
+                        user_name=user_name,
+                    )
                 )
-            )
-            user_ref = await session.scalar(
-                select(User).where(User.telegram_id == args)
-            )
-            if args and user_ref:
-                await session.execute(
-                    update(User)
-                    .where(User.telegram_id == args)
-                    .values(tarot_bonus=user_ref.tarot_bonus + 1)
+
+            elif "gift" in args:
+                # Регистрация с подарком подписки
+                gift_month = extract_months(args)
+
+                session.add(
+                    User(
+                        telegram_id=telegram_id,
+                        user_name=user_name,
+                        tariff="gift",
+                    )
                 )
+
+                today = datetime.now()
+                end_date = today + relativedelta(months=gift_month)
+
+                session.add(
+                    Subscription(
+                        telegram_id=telegram_id,
+                        tariff="gift",
+                        end_date=end_date,
+                    )
+                )
+
+            else:
+                # Реферальная регистрация
+                try:
+                    referrer_id = int(args)
+                    session.add(
+                        User(
+                            telegram_id=telegram_id,
+                            user_name=user_name,
+                            referrar_by=referrer_id,
+                        )
+                    )
+
+                    # Начисляем бонус рефереру
+                    user_ref = await session.scalar(
+                        select(User).where(User.telegram_id == referrer_id)
+                    )
+                    if user_ref:
+                        await session.execute(
+                            update(User)
+                            .where(User.telegram_id == referrer_id)
+                            .values(tarot_bonus=user_ref.tarot_bonus + 1)
+                        )
+
+                except (ValueError, TypeError):
+                    # Если args не является числом, создаем пользователя без рефера
+                    session.add(
+                        User(
+                            telegram_id=telegram_id,
+                            user_name=user_name,
+                        )
+                    )
 
         await session.commit()
 
@@ -248,7 +307,10 @@ async def update_recurring_subscription() -> list[Subscription]:
                 and_(
                     Subscription.end_date >= today_start,
                     Subscription.end_date <= today_end,
-                    Subscription.tariff == "subscription",
+                    or_(
+                        Subscription.tariff == "subscription",
+                        Subscription.tariff == "gift",
+                    ),
                 )
             )
         )
@@ -269,7 +331,10 @@ async def update_recurring_subscription_now() -> list[Subscription]:
                 and_(
                     Subscription.end_date >= today_start,
                     Subscription.end_date <= today_end,
-                    Subscription.tariff == "subscription",
+                    or_(
+                        Subscription.tariff == "subscription",
+                        Subscription.tariff == "gift",
+                    ),
                 )
             )
         )
@@ -295,17 +360,30 @@ async def get_statistics() -> tuple[int, int]:
 
         # Количество всех подписок
         subscription_count_result = await session.execute(
-            select(func.count(Subscription.telegram_id))
+            select(func.count(Subscription.telegram_id)).where(
+                Subscription.tariff == "subscription"
+            )
         )
         count_subscription = subscription_count_result.scalar()
 
         return count_user, count_subscription
 
 
-async def get_CardDay_10am():
+async def get_CardDay_10am() -> list[User]:
     async with async_session() as session:
         return (
             (await session.execute(select(User).where(User.card_day >= 1)))
+            .scalars()
+            .all()
+        )
+
+
+async def get_all_users(
+    tariffs: list = ["gift", "free", "subscription", "subscription(799)", "VIP"]
+) -> list[User]:
+    async with async_session() as session:
+        return (
+            (await session.execute(select(User).where(User.tariff.in_(tariffs))))
             .scalars()
             .all()
         )

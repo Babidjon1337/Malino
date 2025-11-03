@@ -4,11 +4,7 @@ import logging
 import asyncio
 from functools import wraps
 from aiogram import F, Router, Bot
-from aiogram.types import (
-    Message,
-    CallbackQuery,
-    FSInputFile,
-)
+from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart, Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -19,6 +15,7 @@ from app.others.text_message import *
 import app.services.AI_model as AI
 import app.keyboards as kb
 import app.database.requests as rq
+from config import AMOUNT_1, AMOUNT_2
 
 
 logging.basicConfig(level=logging.INFO)
@@ -78,25 +75,6 @@ async def start_command(message: Message, command: CommandObject, state: FSMCont
     await message.answer(start_text, reply_markup=kb.menu_start)
 
 
-@router.message(Command("admin"))
-async def command_admin(message: Message, state: FSMContext):
-    """Получение статистики для Админа"""
-    await state.clear()
-    ADMINS = [932050484, 1186592191, 983660321]
-
-    if message.from_user.id in ADMINS:
-
-        users_count, subscriptions_count = await rq.get_statistics()
-
-        await message.answer(
-            "<b>📊 Статистика</b>\n"
-            f"👥 Всего пользователей: {users_count}\n"
-            f"💸 Подписок: {subscriptions_count}"
-        )
-    else:
-        pass
-
-
 @router.callback_query(F.data == "bonus_url")
 @handle_old_queries()
 async def callback_bonus_url(callback: CallbackQuery, state: FSMContext):
@@ -120,7 +98,7 @@ async def callback_sleep(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     if await rq.check_subscription(callback.from_user.id):
         await callback.message.answer(
-            f"🌙 <b>Добро пожаловать в Сонник, {callback.from_user.first_name}!</b>\n"
+            f"🌙 <b>Добро пожаловать в Сонник, {callback.from_user.first_name}!</b>\n\n"
             "Пожалуйста, опишите свой сон подробно — где вы были, что происходило, "
             "какие эмоции испытывали. Чем больше деталей, тем точнее будет анализ.💫"
         )
@@ -179,7 +157,7 @@ async def callback_tarot(callback: CallbackQuery, state: FSMContext):
     if await rq.check_tarot(callback.from_user.id):
 
         if callback.data == "tarot_reminder":
-            await callback.message.delete()
+            await callback.message.edit_reply_markup(reply_markup=None)
         await callback.message.answer(
             "🃏 Готов получить ответ от карт Таро?\n\n" "<b>Задай свой вопрос:</b>"
         )
@@ -370,21 +348,20 @@ async def callback_learn_more(callback: CallbackQuery):
 async def card_day_10am(users: list, bot: Bot):
     for user in users:
         try:
+            user_name = (await bot.get_chat(user.telegram_id)).first_name
+
             user_id = user.telegram_id
-
-            user_name = (await bot.get_chat(user_id)).first_name
-
             user_name = user_name + ", " if user_name != None else ""
 
             await bot.send_message(
                 chat_id=user_id,
                 text=(
-                    f"{user_name}Вам доступна карта дня! 🔮\n"
+                    f"{user_name}Вам доступна карта дня! 🔮\n\n"
                     "Нажмите Получить карту дня, и я отправлю предсказание 🙌"
                 ),
                 reply_markup=kb.btn_card_day,
             )
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.05)
         except Exception:
             pass
 
@@ -405,6 +382,15 @@ async def command_subscription(message: Message, state: FSMContext):
             f"✨ <b>Ваша подписка активна!</b>\n\n" "Действие подписки безлимито 🌟"
         )
         logger.info(f"Юзер {user_id} VIP")
+    elif user.tariff == "gift":
+
+        subscription = await rq.get_user_subscription(user_id)
+
+        end_date_str = subscription.end_date.strftime("%d.%m.%Y")
+        await message.answer(
+            f"✨ <b>Ваша подписка активна!</b>\n\n" f"📅 Действует до: {end_date_str}"
+        )
+        logger.info(f"Юзер {user_id} gift")
     elif user.tariff == "subscription":
 
         subscription = await rq.get_user_subscription(user_id)
@@ -436,9 +422,9 @@ async def callback_create_subscription(callback: CallbackQuery, state: FSMContex
     await state.clear()
 
     subscription_text = (
-        subscription_text_99
+        subscription_text_1
         if callback.data == "create_subscription_99"
-        else subscription_text_799
+        else subscription_text_2
     )
 
     user_id = callback.from_user.id
@@ -473,9 +459,13 @@ async def callback_create_subscription(callback: CallbackQuery, state: FSMContex
         await state.clear()
 
         await state.set_state(AgreementStates.awaiting_offer_agreement)
-        await state.update_data(agreed_to_offer=False, agreed_to_public_offer=False)
+        await state.update_data(
+            agreed_to_offer=False,
+            agreed_to_public_offer=False,
+            subscription_text=callback.data,
+        )
         # Отправляем сообщение с клавиатурой и устанавливаем начальное состояние
-        await callback.message.edit_text(
+        await callback.message.answer(
             subscription_text,
             disable_web_page_preview=True,
             reply_markup=kb.get_dis_keyboard(
@@ -613,7 +603,6 @@ async def callback_agree_public_offer(callback: CallbackQuery, state: FSMContext
 
         # Получаем текущее состояние данных FSM
         user_data = await state.get_data()
-
         # Безопасное получение значений с дефолтом False
         current_offer = user_data.get("agreed_to_offer", False)
         current_public_offer = user_data.get("agreed_to_public_offer", False)
@@ -653,7 +642,13 @@ async def proceed_to_payment(callback: CallbackQuery, state: FSMContext, user_id
     """Общая функция для перехода к оплате"""
     try:
         logger.info(f"User {user_id} proceeding to payment.")
+        data_subscription_text = (await state.get_data()).get("subscription_text")
 
+        subscription_text = (
+            subscription_text_99
+            if data_subscription_text == "create_subscription_99"
+            else subscription_text_799
+        )
         # Меняем текст сообщения
         sent_message = await callback.message.edit_text(
             subscription_text,
@@ -668,7 +663,7 @@ async def proceed_to_payment(callback: CallbackQuery, state: FSMContext, user_id
             "Напиши свою почту для отправки чека:"
         )
         await state.update_data(
-            payment_message=sent_message, email_message=email_message
+            payment_message=sent_message, email_message=email_message.message_id
         )
 
     except Exception as e:
@@ -681,7 +676,8 @@ async def proceed_to_payment(callback: CallbackQuery, state: FSMContext, user_id
 async def message_email(message: Message, state: FSMContext):
     # Получаем объект сообщениий из состояния
     user_data = await state.get_data()
-    payment_message = user_data.get("payment_message")
+
+    payment_message: Message = user_data.get("payment_message")
     email_message = user_data.get("email_message")
 
     user_message = message.text
@@ -690,7 +686,9 @@ async def message_email(message: Message, state: FSMContext):
     email_pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
 
     if re.match(email_pattern, user_message):
-        await email_message.delete()
+        await message.bot.delete_message(
+            chat_id=message.from_user.id, message_id=email_message
+        )
 
         await payment_message.edit_text(
             text=payment_message.text + f"\n\n✅ Ваша почта принята: {user_message}\n"
@@ -722,13 +720,14 @@ async def message_email(message: Message, state: FSMContext):
         await state.clear()
 
     else:
-        user_data = await state.get_data()
-        email_message = user_data.get("email_message")
 
         # Email невалиден, просим ввести снова
         try:
-            await email_message.edit_text(
-                "Пожалуйста, введите <b>корректный email...</b>\n\nНапиши свою почту для отправки чека:"
+            email_message = await message.bot.edit_message_text(
+                chat_id=message.from_user.id,
+                message_id=email_message,
+                text="Пожалуйста, введите <b>корректный email...</b>\n\nНапиши свою почту для отправки чека:",
             )
+            await state.update_data(email_message=email_message.message_id)
         except:
             pass

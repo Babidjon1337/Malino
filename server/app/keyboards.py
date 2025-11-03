@@ -1,13 +1,12 @@
 from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
-    ReplyKeyboardMarkup,
-    KeyboardButton,
     WebAppInfo,
 )
 from urllib.parse import quote
 
 from config import WEB_APP_URL
+import app.database.requests as rq
 
 menu_start = InlineKeyboardMarkup(
     inline_keyboard=[
@@ -34,6 +33,7 @@ btn_reminder_subscription = InlineKeyboardMarkup(
         [InlineKeyboardButton(text="🌙 Сонник", callback_data="sleep")],
     ]
 )
+
 # Клавиатура для напоминания, когда есть таро-гаданий
 btn_tarot_from_reminder = InlineKeyboardMarkup(
     inline_keyboard=[
@@ -156,7 +156,7 @@ def get_dis_keyboard(
 
     # Кнопка "согласие публичная офрта"
     public_offer_text = (
-        f"{'✅ ' if agreed_to_public_offer else ''}согласие публичная офрта"
+        f"{'✅ ' if agreed_to_public_offer else ''}согласие с публичной оферта"
     )
     keyboard.append(
         [
@@ -167,3 +167,35 @@ def get_dis_keyboard(
     )
 
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+# ----------------------- Admin -------------------------
+
+
+admin_keyboard = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text="Рассылка всем пользователям 📩",
+                callback_data="admin_message_all_users",
+            )
+        ],
+    ]
+)
+
+
+btn_back_admin = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [
+            InlineKeyboardButton(text="⬅️ Назад", callback_data="back_admin"),
+        ]
+    ]
+)
+btn_send_msg = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [
+            InlineKeyboardButton(text="✅ Разослать", callback_data="to_send"),
+            InlineKeyboardButton(text="❌ Отменить", callback_data="back_admin"),
+        ],
+    ]
+)

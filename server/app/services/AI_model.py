@@ -20,13 +20,13 @@ client = AsyncClient(
 
 
 async def generate_response(text, prompt):
-    max_retries = 4  # Всего 4 попытки
+    max_retries = 4  # Всего 3 попытки
     for attempt in range(max_retries):
         try:
             system_prompt = prompt_data[prompt]
 
             completion = await client.chat.completions.create(
-                model="qwen/qwen3-235b-a22b:free",
+                model="qwen/qwen3-235b-a22b-2507",
                 # model="deepseek/deepseek-chat-v3.1:free",
                 # model="deepseek/deepseek-chat-v3-0324:free",
                 messages=[
@@ -41,9 +41,23 @@ async def generate_response(text, prompt):
                 ],
                 extra_body={
                     "provider": {
-                        "order": ["Chutes"],
+                        "order": [
+                            "friendli",
+                            "fireworks/fp8",
+                            "baseten/fp8",
+                            "together",
+                        ],
+                        "sort": "throughput",
                         "allow_fallbacks": False,
                     },
+                    "reasoning": {
+                        "effort": "high",
+                        "exclude": True,
+                    },
+                },
+                extra_headers={
+                    "HTTP-Referer": "https://t.me/malina_ezo_bot",
+                    "X-Title": "Malina bot",
                 },
                 # КРИТИЧЕСКИЕ ПАРАМЕТРЫ ДЛЯ КОНТРОЛЯ ФОРМАТА
                 # max_tokens=(
@@ -72,6 +86,7 @@ async def generate_response(text, prompt):
                 .replace("<br/>", "\n")
                 .replace("<br />", "\n")
             )
+
             # Проверка на символы <think>...</think>
             if "<think>" in response:
                 return re.sub(
@@ -100,6 +115,29 @@ async def generate_response(text, prompt):
                     "Слишком много запросов. Пожалуйста, попробуйте через несколько минут."
                 )
                 return "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
+
+        except APITimeoutError as e:
+            # Обработка таймаута
+            if attempt < max_retries - 1:
+                wait_time = 2 ** (attempt + 1)
+                logger.warning(f"Таймаут запроса. Ждем {wait_time} секунд...")
+                await asyncio.sleep(wait_time)
+                continue
+            else:
+                logger.error("Таймаут после всех попыток")
+                return "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
+
+        except APIError as e:
+            # Обработка других ошибок API
+            if attempt < max_retries - 1:
+                wait_time = 2 ** (attempt + 1)
+                logger.warning(f"Ошибка API. Ждем {wait_time} секунд...")
+                await asyncio.sleep(wait_time)
+                continue
+            else:
+                logger.error(f"Ошибка API после всех попыток: {str(e)}")
+                return "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
+
         except AttributeError as e:
             if "'NoneType' object" in str(e):
                 logger.error(
@@ -110,6 +148,12 @@ async def generate_response(text, prompt):
                 return "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
             else:
                 raise e
+
         except Exception as e:
-            logger.error(f"Ошибка при запросе к OpenRouter: {str(e)}")
+            # Обработка всех остальных исключений
+            logger.error(f"Неожиданная ошибка на попытке {attempt + 1}: {str(e)}")
+            if attempt < max_retries - 1:
+                wait_time = 2 ** (attempt + 1)
+                await asyncio.sleep(wait_time)
+                continue
             return "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."

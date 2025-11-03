@@ -3,7 +3,7 @@ import uuid
 from yookassa import Configuration, Payment
 from yookassa.domain.exceptions import BadRequestError
 
-from config import YOOKASSA_SHOP_ID, YOOKASSA_SECRET_KEY
+from config import YOOKASSA_SHOP_ID, YOOKASSA_SECRET_KEY, AMOUNT_1, AMOUNT_2
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +104,7 @@ class YooKassaService:
         user_id: int,
         payment_method_id: str,
         email: str,
+        amount: str,
     ):
         """
         Создает регулярный платеж с использованием сохраненного способа оплаты.

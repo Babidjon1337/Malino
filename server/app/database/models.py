@@ -20,7 +20,7 @@ class User(Base):
 
     telegram_id = mapped_column(BigInteger, primary_key=True)  # Telegram ID
     user_name = mapped_column(String(255))
-    tariff = mapped_column(String(20), default="free")  # free, trial, subscription, VIP
+    tariff = mapped_column(String(20), default="free")  # free, gift, subscription, VIP
     tarot_bonus = mapped_column(Integer, default=3)  # +1 за каждого друга
     card_day = mapped_column(Integer, default=1)
     referrar_by = mapped_column(BigInteger, nullable=True)
@@ -31,7 +31,7 @@ class Subscription(Base):
     __tablename__ = "subscriptions"
 
     telegram_id = mapped_column(BigInteger, primary_key=True)  # Telegram ID
-    tariff = mapped_column(String(20), default="free")  # free, subscription, VIP
+    tariff = mapped_column(String(20), default="free")  # free, gift, subscription, VIP,
     is_recurring = mapped_column(Boolean, nullable=True)
     email = mapped_column(String(100), nullable=True)
     start_date = mapped_column(DateTime, default=func.datetime("now", "localtime"))

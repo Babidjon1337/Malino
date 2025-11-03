@@ -3,13 +3,10 @@ import logging
 import traceback
 import asyncio
 import json
-import hashlib
-import hmac
-import base64
-from datetime import date, datetime, timedelta  # Добавлены datetime, timedelta
+from datetime import datetime, timedelta  # Добавлены datetime, timedelta
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, Header
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from aiogram import Bot, Dispatcher
@@ -26,9 +23,9 @@ from config import (
 
 from app.services.async_task import TaskScheduler
 from app.handlers import router, webapp_tarot
+from app.admin_handler import admin_router
 import app.database.requests as rq
 import app.keyboards as kb
-from app.services.yookassa_service import yookassa_service
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -42,7 +39,8 @@ dp = Dispatcher()
 
 # Очищаем роутер от предыдущих подключений
 router._parent_router = None
-dp.include_router(router)
+admin_router._parent_router = None
+dp.include_routers(router, admin_router)
 
 # Создаем планировщики
 task_scheduler = TaskScheduler(bot)

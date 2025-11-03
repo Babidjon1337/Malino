@@ -19,17 +19,19 @@ end_date = today + timedelta(days=days_in_month)
 # print(days_in_month)
 # print(end_date)
 
-today_start = datetime.now().replace(
-    hour=0, minute=0, second=0, microsecond=0
-) + timedelta(days=1)
-today_end = today_start + timedelta(days=1)
-print(today_start)
-print(today_end)
-print("-------------------")
+# today_start = datetime.now().replace(
+#     hour=0, minute=0, second=0, microsecond=0
+# ) + timedelta(days=1)
+# today_end = today_start + timedelta(days=1)
+# print(today_start)
+# print(today_end)
+# print("-------------------")
 
-question = "Родион выввв '' "
-encoded_question = quote(question)
-print("24" in "Пробная подписка — 99 ₽ / 2 часа")
+# question = "Родион выввв '' "
+# encoded_question = quote(question)
+# print("24" in "Пробная подписка — 99 ₽ / 2 часа")
 
 
-print(True == True)
+# print(True == True)
+args = "gift-month"
+print("gift" in args)

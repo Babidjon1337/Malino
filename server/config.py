@@ -20,3 +20,7 @@ PORT = 8000
 
 # Taro Web
 WEB_APP_URL = os.getenv("WEB_APP_URL")
+
+
+AMOUNT_1 = "99"
+AMOUNT_2 = "799"
