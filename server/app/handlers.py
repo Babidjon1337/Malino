@@ -345,6 +345,9 @@ async def callback_learn_more(callback: CallbackQuery):
 
 # Отправка в 10:30 напоминание о Карте Дня
 async def card_day_10am(users: list, bot: Bot):
+    success_count = 0
+    fail_count = 0
+
     for user in users:
         try:
             user_name = (await bot.get_chat(user.telegram_id)).first_name
@@ -360,9 +363,21 @@ async def card_day_10am(users: list, bot: Bot):
                 ),
                 reply_markup=kb.btn_card_day,
             )
+
+            success_count += 1
             await asyncio.sleep(0.05)
         except Exception:
-            pass
+            fail_count += 1
+
+    await bot.send_message(
+        chat_id=1186592191,
+        text=(
+            f"📤 <b>Рассылка в 10:30 о карте дня завершена!</b>\n\n"
+            f"📊 Всего пользователей: <b>{len(users)}</b>\n"
+            f"✅ Успешно: <b>{success_count}</b>\n"
+            f"❌ Не удалось: <b>{fail_count}</b>"
+        ),
+    )
 
 
 @router.message(Command("subscription"))

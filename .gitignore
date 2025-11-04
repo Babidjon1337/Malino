@@ -10,6 +10,7 @@ node_modules/
 .env.local
 .env.production
 .env.development
+README.md
 
 # Python
 __pycache__/
