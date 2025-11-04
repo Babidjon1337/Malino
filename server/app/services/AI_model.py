@@ -85,7 +85,7 @@ async def generate_response(text, prompt):
                     },
                 },
                 extra_headers={
-                    "HTTP-Referer": "https://t.me/malina_ezo_bot",
+                    "HTTP-Referer": "https://malinaezo.ru",
                     "X-Title": "Malina bot",
                 },
                 # КРИТИЧЕСКИЕ ПАРАМЕТРЫ ДЛЯ КОНТРОЛЯ ФОРМАТА
