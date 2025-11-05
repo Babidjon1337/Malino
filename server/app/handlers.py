@@ -177,9 +177,8 @@ async def callback_tarot(callback: CallbackQuery, state: FSMContext):
 async def message_tarot(message: Message, state: FSMContext):
     await state.update_data(text=message.text)
     data = await state.get_data()
-    question = (
-        str(data.get("text", "")).replace('"', "'").replace("<", "'").replace(">", "'")
-    )
+    question = data.get("text")
+
     await state.clear()
 
     msg = await message.answer(
