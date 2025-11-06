@@ -1,13 +1,20 @@
 import asyncio
 from datetime import datetime
+from pathlib import Path
 
 from sqlalchemy import BigInteger, String, Integer, DateTime, Boolean, func
 from sqlalchemy.orm import DeclarativeBase, mapped_column
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncAttrs, async_sessionmaker
 
 
-engine = create_async_engine(url="sqlite+aiosqlite:///app/database/db.sqlite3")
+# Получаем абсолютный путь к текущему файлу
+BASE_DIR = Path(__file__).resolve().parent
+DATABASE_PATH = BASE_DIR / "db.sqlite3"  # или "database/db.sqlite3", если нужно
 
+# Создаем путь к базе данных
+engine = create_async_engine(
+    url=f"sqlite+aiosqlite:///{DATABASE_PATH}", future=True, echo=False
+)
 async_session = async_sessionmaker(engine)
 
 
