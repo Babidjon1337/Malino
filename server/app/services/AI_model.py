@@ -71,9 +71,9 @@ async def generate_response(text, prompt):
                 extra_body={
                     "provider": {
                         "order": [
+                            "baseten/fp8",
                             "friendli",
                             "fireworks/fp8",
-                            "baseten/fp8",
                             "together",
                         ],
                         "sort": "throughput",
