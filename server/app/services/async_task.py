@@ -15,11 +15,13 @@ class TaskScheduler:
         self.bot = bot
 
     async def reset_card_day(self):
-        """Сбрасывает card_day на 1 для всех пользователей ровно в 01:00"""
+        """Сбрасывает card_day на 1 для всех пользователей ровно в 00:01"""
         try:
-            # Предполагается, что эта функция существует в requests.py
             await rq.CardDayRese()
             logger.info("Карты для обновлены.")
+
+            await rq.del_promo_code()
+            logger.info("Ненужные промокоды удалены")
 
         except Exception as e:
             logger.error(f"Error during card_day reset: {e}", exc_info=True)

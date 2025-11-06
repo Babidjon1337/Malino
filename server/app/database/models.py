@@ -56,7 +56,8 @@ class GiftCode(Base):
     id = mapped_column(Integer, primary_key=True)
     code = mapped_column(
         String, unique=True, nullable=False
-    )  # Уникальный код "gift-abc123"
+    )  # Уникальный код "gift-abc1232"
+    days = mapped_column(Integer, nullable=False)  # дней действует
     valid_before = mapped_column(DateTime)
 
 

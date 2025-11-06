@@ -211,9 +211,13 @@ admin_keyboard = InlineKeyboardMarkup(
     inline_keyboard=[
         [
             InlineKeyboardButton(
-                text="Рассылка всем пользователям 📩",
+                text="Рассылка 📩",
                 callback_data="admin_message_all_users",
-            )
+            ),
+            InlineKeyboardButton(
+                text="Промокоды 🎟",
+                callback_data="admin_promo_codes",
+            ),
         ],
     ]
 )
@@ -231,6 +235,19 @@ btn_send_msg = InlineKeyboardMarkup(
         [
             InlineKeyboardButton(text="✅ Разослать", callback_data="to_send"),
             InlineKeyboardButton(text="❌ Отменить", callback_data="back_admin"),
+        ],
+    ]
+)
+
+btn_promo_code = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text="➕ Создать новый", callback_data="new_promo_code"
+            ),
+        ],
+        [
+            InlineKeyboardButton(text="⬅️ Назад", callback_data="back_admin"),
         ],
     ]
 )

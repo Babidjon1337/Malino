@@ -24,6 +24,10 @@ class MessageAllUsersState(StatesGroup):
     Admin_text = State()
 
 
+class NewPromoCode(StatesGroup):
+    day = State()
+
+
 @admin_router.message(Command("admin"))
 async def command_admin(message: Message, state: FSMContext):
     """Получение статистики для Админа"""
@@ -175,6 +179,84 @@ async def callback_to_send_all_users(callback: CallbackQuery, state: FSMContext)
             f"❌ Не удалось: {fail_count}"
         )
         await state.clear()
+
+
+@admin_router.callback_query(F.data == "admin_promo_codes")
+async def callback_promo_codes(callback: CallbackQuery):
+    await callback.answer()
+
+    PromoCodes = await rq.get_all_promo_codes()
+
+    if PromoCodes:
+        result = (
+            "\n".join(
+                [
+                    f"<code>https://t.me/malina_ezo_bot?start={item.code}</code>\n"
+                    f"Дней: <b>{item.days}</b>\n"
+                    f"Действует до: <b>{item.valid_before.strftime('%d.%m.%Y')}</b>\n"
+                    for item in PromoCodes
+                ]
+            )
+            + "\n"
+        )
+    else:
+        result = "Пока тут пусто..."
+
+    await callback.message.edit_text(
+        f"<b>🎟 Промокоды</b>\n\n{result}",
+        disable_web_page_preview=True,
+        reply_markup=kb.btn_promo_code,
+    )
+
+
+@admin_router.callback_query(F.data == "new_promo_code")
+async def callback_new_promo_code(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+
+    send_message = await callback.message.edit_text(
+        "Укажите срок действия промокода в днях <i>(Укажите только число)</i>",
+        reply_markup=kb.btn_back_admin,
+    )
+    await state.update_data(send_message_id=send_message.message_id)
+    await state.set_state(NewPromoCode.day)
+
+
+@admin_router.message(NewPromoCode.day)
+async def process_promo_code_day(message: Message, state: FSMContext):
+    await message.delete()
+
+    send_message_id = await state.get_value("send_message_id")
+    try:
+        day = int(message.text)
+
+        PromoCode = await rq.create_promo_code(day)
+
+        await message.bot.edit_message_text(
+            chat_id=message.from_user.id,
+            message_id=send_message_id,
+            text=(
+                "🆕 Промокод создан: \n"
+                f"<code>https://t.me/malina_ezo_bot?start={PromoCode.get('code')}</code>\n"
+                f"Дней: <b>{PromoCode.get('days')}</b>\n"
+                f"Действует до: <b>{PromoCode.get('valid_before').strftime('%d.%m.%Y')}</b>"
+            ),
+            disable_web_page_preview=True,
+            reply_markup=kb.btn_back_admin,
+        )
+        await state.clear()
+    except ValueError:
+        try:
+            await message.bot.edit_message_text(
+                chat_id=message.from_user.id,
+                message_id=send_message_id,
+                text=(
+                    "Укажите срок действия промокода в днях <i>(Укажите только число)</i>\n\n"
+                    "❗️ Ошибка, укажите <b>цифру</b>"
+                ),
+                reply_markup=kb.btn_back_admin,
+            )
+        except:
+            pass
 
 
 @admin_router.message(F.animation | F.photo | F.video)

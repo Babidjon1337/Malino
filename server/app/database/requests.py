@@ -1,23 +1,16 @@
 import re
+import secrets
+import string
 import calendar
 import logging
 from sqlalchemy import select, update, delete, and_, or_, func
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 
-from app.database.models import User, Subscription, async_session
+from app.database.models import User, Subscription, GiftCode, async_session
 
 
 logger = logging.getLogger(__name__)
-
-
-def extract_months(gift: str) -> int:
-    """Извлекает количество месяцев из gift-строки"""
-    match = re.search(r"gift-(\d*)month", gift)
-    if match:
-        number_str = match.group(1)
-        return int(number_str) if number_str else 1
-    return 1
 
 
 async def add_user(telegram_id: int, user_name: str, args: str | None) -> None:
@@ -36,9 +29,9 @@ async def add_user(telegram_id: int, user_name: str, args: str | None) -> None:
                     )
                 )
 
-            elif "gift" in args:
+            elif "gift" in args and await get_promo_code(args):
                 # Регистрация с подарком подписки
-                gift_month = extract_months(args)
+                gift_days = (await get_promo_code(args)).days
 
                 session.add(
                     User(
@@ -49,7 +42,7 @@ async def add_user(telegram_id: int, user_name: str, args: str | None) -> None:
                 )
 
                 today = datetime.now()
-                end_date = today + relativedelta(months=gift_month)
+                end_date = today + relativedelta(days=gift_days)
 
                 session.add(
                     Subscription(
@@ -58,6 +51,8 @@ async def add_user(telegram_id: int, user_name: str, args: str | None) -> None:
                         end_date=end_date,
                     )
                 )
+
+                await session.execute(delete(GiftCode).where(GiftCode.code == args))
 
             else:
                 # Реферальная регистрация
@@ -90,6 +85,29 @@ async def add_user(telegram_id: int, user_name: str, args: str | None) -> None:
                             user_name=user_name,
                         )
                     )
+
+        elif user.tariff == "free" and "gift" in args and await get_promo_code(args):
+
+            gift_days = (await get_promo_code(args)).days
+
+            today = datetime.now()
+            end_date = today + relativedelta(days=gift_days)
+
+            await session.execute(
+                update(User)
+                .where(User.telegram_id == telegram_id)
+                .values(tariff="gift")
+            )
+
+            session.add(
+                Subscription(
+                    telegram_id=telegram_id,
+                    tariff="gift",
+                    end_date=end_date,
+                )
+            )
+
+            await session.execute(delete(GiftCode).where(GiftCode.code == args))
 
         await session.commit()
 
@@ -386,4 +404,46 @@ async def get_all_users(
             (await session.execute(select(User).where(User.tariff.in_(tariffs))))
             .scalars()
             .all()
+        )
+
+
+async def get_all_promo_codes() -> list[GiftCode]:
+    async with async_session() as session:
+        return (await session.execute(select(GiftCode))).scalars().all()
+
+
+async def get_promo_code(code) -> GiftCode:
+    async with async_session() as session:
+        return await session.scalar(select(GiftCode).where(GiftCode.code == code))
+
+
+async def create_promo_code(days: str) -> dict:
+    async with async_session() as session:
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        valid_before = today + timedelta(days=3)
+
+        random_part = "".join(
+            secrets.choice(string.ascii_letters + string.digits) for _ in range(8)
+        )
+
+        session.add(
+            GiftCode(
+                code=f"gift-{random_part}",
+                days=days,
+                valid_before=valid_before,
+            )
+        )
+        await session.commit()
+
+        return {
+            "code": f"gift-{random_part}",
+            "days": days,
+            "valid_before": valid_before,
+        }
+
+
+async def del_promo_code() -> dict:
+    async with async_session() as session:
+        await session.execute(
+            delete(GiftCode).where(GiftCode.valid_before <= datetime.now())
         )
