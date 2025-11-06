@@ -50,6 +50,16 @@ class Subscription(Base):
     )  # ID подписки в CloudPayments
 
 
+class GiftCode(Base):
+    __tablename__ = "gift_codes"
+
+    id = mapped_column(Integer, primary_key=True)
+    code = mapped_column(
+        String, unique=True, nullable=False
+    )  # Уникальный код "gift-abc123"
+    valid_before = mapped_column(DateTime)
+
+
 async def async_main():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
