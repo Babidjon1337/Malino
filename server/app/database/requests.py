@@ -447,8 +447,9 @@ async def create_promo_code(days: str) -> dict:
         }
 
 
-async def del_promo_code() -> dict:
+async def del_promo_code() -> None:
     async with async_session() as session:
         await session.execute(
             delete(GiftCode).where(GiftCode.valid_before <= datetime.now())
         )
+        await session.commit()
