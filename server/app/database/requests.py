@@ -29,7 +29,7 @@ async def add_user(telegram_id: int, user_name: str, args: str | None) -> None:
                     )
                 )
 
-            elif "gift" in args and await get_promo_code(args):
+            elif args is not None and "gift" in args and await get_promo_code(args):
                 # Регистрация с подарком подписки
                 gift_days = (await get_promo_code(args)).days
 
@@ -86,7 +86,12 @@ async def add_user(telegram_id: int, user_name: str, args: str | None) -> None:
                         )
                     )
 
-        elif user.tariff == "free" and "gift" in args and await get_promo_code(args):
+        elif (
+            user.tariff == "free"
+            and args is not None
+            and "gift" in args
+            and await get_promo_code(args)
+        ):
 
             gift_days = (await get_promo_code(args)).days
 
