@@ -253,15 +253,14 @@ async def callback_card_day(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
     await state.clear()
+
+    if callback.data == "card_day_reminder":
+        await callback.message.edit_reply_markup(reply_markup=None)
+
     if await rq.check_card_day(callback.from_user.id):
-        if callback.data == "card_day_reminder":
-            msg = await callback.message.edit_text(
-                "Соединяюсь с космической энергией...\n🌌 Раскрываю тайны Вселенной для вашей карты дня"
-            )
-        else:
-            msg = await callback.message.answer(
-                "Соединяюсь с космической энергией...\n🌌 Раскрываю тайны Вселенной для вашей карты дня"
-            )
+        msg = await callback.message.answer(
+            "Соединяюсь с космической энергией...\n🌌 Раскрываю тайны Вселенной для вашей карты дня"
+        )
 
         selected_card = random.choice(tarot_deck)
         file_id = file_id_cards[selected_card]
