@@ -129,7 +129,7 @@ async def message_sleep(message: Message, state: FSMContext):
         prompt="sleep",
     )
 
-    logger.info(f"Сон пользователя: {data.get('text')}")
+    logger.info(f"🌙 Сон пользователя: {data.get('text')}")
     await msg.delete()
 
     try:

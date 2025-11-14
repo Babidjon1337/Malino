@@ -54,6 +54,15 @@ async def add_user(telegram_id: int, user_name: str, args: str | None) -> None:
 
                 await session.execute(delete(GiftCode).where(GiftCode.code == args))
 
+            elif args is not None and "special-link" in args:
+                session.add(
+                    User(
+                        telegram_id=telegram_id,
+                        user_name=user_name,
+                        tariff="free(special)",
+                    )
+                )
+
             else:
                 # Реферальная регистрация
                 try:
@@ -76,6 +85,17 @@ async def add_user(telegram_id: int, user_name: str, args: str | None) -> None:
                             .where(User.telegram_id == referrer_id)
                             .values(tarot_bonus=user_ref.tarot_bonus + 1)
                         )
+
+                        referrar_count = await session.scalar(
+                            select(func.count()).where(User.referrar_by == referrer_id)
+                        )
+
+                        if user_ref.tariff == "free(special)" and referrar_count >= 3:
+                            await session.execute(
+                                update(User)
+                                .where(User.telegram_id == referrer_id)
+                                .values(tariff="VIP")
+                            )
 
                 except (ValueError, TypeError):
                     # Если args не является числом, создаем пользователя без рефера
@@ -136,10 +156,10 @@ async def check_tarot(telegram_id: int) -> bool:
     async with async_session() as session:
         user = await session.scalar(select(User).where(User.telegram_id == telegram_id))
 
-        if user.tariff != "free":
+        if not user.tariff.startswith("free"):
             return True
 
-        elif user.tariff == "free" and user.tarot_bonus > 0:
+        elif user.tariff.startswith("free") and user.tarot_bonus > 0:
             return True
 
         await session.commit()
@@ -150,7 +170,7 @@ async def take_away_tarot(telegram_id: int) -> None:
     async with async_session() as session:
         user = await session.scalar(select(User).where(User.telegram_id == telegram_id))
 
-        if user.tariff == "free" and user.tarot_bonus > 0:
+        if user.tariff.startswith("free") and user.tarot_bonus > 0:
             user.tarot_bonus -= 1
 
         await session.commit()
@@ -165,7 +185,7 @@ async def caunt_taro(telegram_id: int) -> int:
 async def check_subscription(telegram_id: int) -> dict:
     async with async_session() as session:
         user = await session.scalar(select(User).where(User.telegram_id == telegram_id))
-        if user.tariff != "free":
+        if not user.tariff.startswith("free"):
             return True
         else:
             return False
@@ -402,7 +422,7 @@ async def get_CardDay_10am() -> list[User]:
 
 
 async def get_all_users(
-    tariffs: list = ["gift", "free", "subscription", "VIP"]
+    tariffs: list = ["gift", "free", "subscription", "VIP", "free(special)"]
 ) -> list[User]:
     async with async_session() as session:
         return (
