@@ -71,10 +71,11 @@ async def generate_response(text, prompt):
                 extra_body={
                     "provider": {
                         "order": [
-                            "baseten/fp8",
+                            "baseten",
                             "friendli",
-                            "fireworks/fp8",
+                            "fireworks",
                             "together",
+                            "nebius",
                         ],
                         "sort": "throughput",
                         "allow_fallbacks": False,
