@@ -63,13 +63,13 @@ btn_attempts = InlineKeyboardMarkup(
         ],
         [
             InlineKeyboardButton(
-                text="💎 Безлимит на месяц за 990 ₽",
-                callback_data="create_subscription_990",
+                text="💎 Безлимит на месяц за 790 ₽",
+                callback_data="create_subscription_790",
             )
         ],
     ]
 )
-btn_create_subscription_99_or_990 = InlineKeyboardMarkup(
+btn_create_subscription_99_or_790 = InlineKeyboardMarkup(
     inline_keyboard=[
         [
             InlineKeyboardButton(
@@ -79,8 +79,8 @@ btn_create_subscription_99_or_990 = InlineKeyboardMarkup(
         ],
         [
             InlineKeyboardButton(
-                text="🚀 Безлимит на месяц за 990 ₽",
-                callback_data="create_subscription_990",
+                text="🚀 Безлимит на месяц за 790 ₽",
+                callback_data="create_subscription_790",
             )
         ],
     ]
@@ -88,7 +88,7 @@ btn_create_subscription_99_or_990 = InlineKeyboardMarkup(
 
 
 def bonus_url(telegram_id: str):
-    copy_text = f"Присоединяйся к Malina Bot:\n\nhttps://t.me/malina_ezo_bot?start={telegram_id}"
+    copy_text = f"🔮 Присоединяйся к Malina Bot:\n\nhttps://t.me/malina_ezo_bot?start={telegram_id}"
     share_url = f"https://t.me/share/url?url={quote(copy_text)}"
 
     return InlineKeyboardMarkup(
