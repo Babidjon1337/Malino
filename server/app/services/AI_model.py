@@ -73,9 +73,9 @@ async def generate_response(text, prompt):
                         "order": [
                             "baseten",
                             "friendli",
-                            "fireworks",
                             "together",
                             "nebius",
+                            "google-vertex",
                         ],
                         "sort": "throughput",
                         "allow_fallbacks": False,
