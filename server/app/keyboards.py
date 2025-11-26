@@ -41,6 +41,18 @@ btn_tarot_from_reminder = InlineKeyboardMarkup(
     ]
 )
 
+# продолжение карт тыро
+btn_continuation_tarot = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text="✨ Узнать больше", callback_data="continuation_tarot"
+            )
+        ],
+        [InlineKeyboardButton(text="🚀 Назад", callback_data="back_to_start")],
+    ]
+)
+
 # Клавиатура для напоминания, когда нет таро-гаданий
 btn_more_info_from_reminder = InlineKeyboardMarkup(
     inline_keyboard=[
@@ -118,7 +130,7 @@ btn_management_subscription = InlineKeyboardMarkup(
 )
 
 
-def webapp_button(question: str, message_id: str):
+def webapp_button(message_id: str):
     # Кодируем вопрос для безопасной передачи в URL
 
     return InlineKeyboardMarkup(
@@ -126,48 +138,11 @@ def webapp_button(question: str, message_id: str):
             [
                 InlineKeyboardButton(
                     text="🔮 Выбрать карты",
-                    web_app=WebAppInfo(
-                        url=f"{WEB_APP_URL}?question={safe_url_param(question)}&message_id={message_id}"
-                    ),
+                    web_app=WebAppInfo(url=f"{WEB_APP_URL}?message_id={message_id}"),
                 )
             ],
         ],
     )
-
-
-def safe_url_param(text: str) -> str:
-    """
-    Безопасно подготавливает текст для передачи в URL параметр
-    """
-
-    # Заменяем самые опасные символы, которые ломают структуру URL
-    replacements = {
-        "&": " и ",
-        "=": " равно ",
-        "?": "",
-        "#": "",
-        "%": " процент ",
-        "+": " плюс ",
-        '"': "'",
-        "<": "",
-        ">": "",
-        "\\": "",
-        "|": " или ",
-        "^": "",
-        "`": "'",
-        "{": "(",
-        "}": ")",
-        "[": "(",
-        "]": ")",
-        ";": ",",
-        "  ": " ",  # двойные пробелы -> одинарные
-    }
-
-    # Применяем замены
-    for char, replacement in replacements.items():
-        text = text.replace(char, replacement)
-
-    return text.strip()
 
 
 def get_dis_keyboard(

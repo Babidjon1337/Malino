@@ -3,11 +3,12 @@ import random
 import logging
 import asyncio
 from functools import wraps
-from aiogram import F, Router, Bot
+from aiogram import F, Router, Bot, Dispatcher
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart, Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.storage.base import StorageKey
 from aiogram.exceptions import TelegramBadRequest  # Добавлен импорт исключения
 
 from app.services.yookassa_service import yookassa_service
@@ -67,16 +68,52 @@ def handle_old_queries(answer_text: str = None):
     return decorator
 
 
+async def clear_tarot_keyboard_by_state(state: FSMContext, bot: Bot, user_id: int):
+    """
+    Универсальная функция для очистки клавиатуры таро
+    """
+    data = await state.get_data()
+    tarot_msg_id = data.get("tarot_msg_id")
+
+    if tarot_msg_id:
+        try:
+            await bot.edit_message_reply_markup(
+                chat_id=user_id,
+                message_id=tarot_msg_id,
+                reply_markup=None,
+            )
+            logger.info(
+                f"Убрана клавиатура у сообщения {tarot_msg_id} для пользователя {user_id}"
+            )
+            await state.clear()
+        except Exception as e:
+            logger.warning(
+                f"Не удалось убрать клавиатуру у сообщения {tarot_msg_id}: {e}"
+            )
+
+
 @router.message(CommandStart())
 async def start_command(message: Message, command: CommandObject, state: FSMContext):
+    await clear_tarot_keyboard_by_state(state, message.bot, message.from_user.id)
     await state.clear()
     await rq.add_user(message.from_user.id, message.from_user.username, command.args)
     await message.answer(start_text, reply_markup=kb.menu_start)
 
 
+@router.callback_query(F.data == "back_to_start")
+@handle_old_queries()
+async def callback_back_to_start(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await state.clear()
+
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.message.answer(start_text, reply_markup=kb.menu_start)
+
+
 @router.callback_query(F.data == "bonus_url")
 @handle_old_queries()
 async def callback_bonus_url(callback: CallbackQuery, state: FSMContext):
+    await clear_tarot_keyboard_by_state(state, callback.bot, callback.from_user.id)
     await callback.answer()
     await state.clear()
     await callback.message.edit_text(
@@ -92,6 +129,7 @@ async def callback_bonus_url(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "sleep")
 @handle_old_queries()
 async def callback_sleep(callback: CallbackQuery, state: FSMContext):
+    await clear_tarot_keyboard_by_state(state, callback.bot, callback.from_user.id)
     await callback.answer()
 
     await state.clear()
@@ -149,6 +187,7 @@ async def message_sleep(message: Message, state: FSMContext):
 @router.callback_query(F.data.in_(["tarot", "tarot_reminder"]))
 @handle_old_queries()
 async def callback_tarot(callback: CallbackQuery, state: FSMContext):
+    await clear_tarot_keyboard_by_state(state, callback.bot, callback.from_user.id)
     await callback.answer()
 
     await state.clear()
@@ -182,20 +221,34 @@ async def message_tarot(message: Message, state: FSMContext):
     await state.clear()
 
     msg = await message.answer(
-        "Выбери <b>3 карты</b>, которые говорят с вашей душой.\n"
-        "✨ Выбранные карты появятся здесь. Когда закончите, нажми «Трактовка»."
+        "<b>Выберите <b>3 карты</b>, которые говорят с вашей душой.</b>\n\n"
+        "✨ Выбранные карты появятся здесь. Когда закончите, нажмите «Трактовка»."
     )
-    await msg.edit_reply_markup(reply_markup=kb.webapp_button(question, msg.message_id))
+    await msg.edit_reply_markup(reply_markup=kb.webapp_button(msg.message_id))
+    await state.update_data(question=question, tarot_msg_id=msg.message_id)
 
 
 async def webapp_tarot(
     bot: Bot,
+    dp: Dispatcher,
     user_id: int,
     cards_list: str,
-    question: str,
     message_id: int,
 ):
     try:
+        storage_key = StorageKey(
+            chat_id=user_id,
+            user_id=user_id,
+            bot_id=bot.id,
+        )
+        state: FSMContext = FSMContext(
+            storage=dp.storage,
+            key=storage_key,
+        )
+        data = await state.get_data()
+        question = data.get("question")
+        tarot_new_continuation = data.get("tarot_new_continuation", False)
+
         await rq.take_away_tarot(user_id)
         # Редактируем исходное сообщение вместо удаления
         await bot.edit_message_text(
@@ -205,10 +258,30 @@ async def webapp_tarot(
             parse_mode="HTML",
         )
 
-        # Генерируем ответ
-        response = await AI.generate_response(
-            text=f"Вопрос: {question}\nКарты: {cards_list}",
-            prompt="cards_taro",
+        if tarot_new_continuation:
+            # Это новый продолженный расклад таро.
+            logger.info("🔮 Это новый продолженный расклад таро.")
+            question = data.get("question")
+            continuation_response_text = data.get("continuation_response_text")
+
+            response = await AI.generate_response(
+                f"Вопрос: {question}\nКарты: {cards_list}",
+                "cards_taro",
+                continuation_response_text,
+                question,
+            )
+        else:
+            # Генерируем ответ
+            response = await AI.generate_response(
+                text=f"Вопрос: {question}\nКарты: {cards_list}",
+                prompt="cards_taro",
+            )
+
+        logger.info(
+            f"""Пользователь: {user_id}.
+            Карты: {cards_list}.
+            Вопрос: {question}.
+            ID сообщения: {message_id}."""
         )
 
         # Редактируем сообщение снова, показывая результат
@@ -222,11 +295,12 @@ async def webapp_tarot(
 
         except TelegramBadRequest as e:
             if "can't parse entities" in str(e):
-                clean_response = re.sub(r"<[^>]+>", "", response)
+                response = re.sub(r"<[^>]+>", "", response)
+
                 await bot.edit_message_text(
                     chat_id=user_id,
                     message_id=message_id,
-                    text=clean_response,
+                    text=response,
                     parse_mode="HTML",
                 )
             else:
@@ -240,16 +314,88 @@ async def webapp_tarot(
                 )
                 raise e
 
+        # Генерируем продолжение
+        continuation_response_text = f"Вопрос: {question}\n\n{response}"
+
+        question_response = await AI.generate_response(
+            text=continuation_response_text,
+            prompt="continuation_tarot",
+        )
+
+        # Редактируем сообщение снова, показывая результат
+        try:
+            msg_id = await bot.send_message(
+                chat_id=user_id,
+                text=question_response,
+                reply_markup=kb.btn_continuation_tarot,
+            )
+        except TelegramBadRequest as e:
+            if "can't parse entities" in str(e):
+                question_response = re.sub(r"<[^>]+>", "", question_response)
+
+                msg_id = await bot.send_message(
+                    chat_id=user_id,
+                    text=question_response,
+                    reply_markup=kb.btn_continuation_tarot,
+                )
+            else:
+                raise e
+
+        await state.update_data(
+            continuation_response_text=continuation_response_text,
+            question=question_response,
+            tarot_msg_id=msg_id.message_id,
+        )
     except Exception as e:
-        print(f"Ошибка при обработке расклада таро: {e}")
+        print(f"Ошибка при обработке расклада таро продолжение: {e}")
         import traceback
 
         traceback.print_exc()
 
 
+@router.callback_query(F.data == "continuation_tarot")
+@handle_old_queries()
+async def callback_continuation_tarot(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    data = await state.get_data()
+    tarot_msg_id: Message = data.get("tarot_msg_id")
+
+    if tarot_msg_id:
+        if await rq.check_tarot(callback.from_user.id):
+
+            await callback.message.edit_reply_markup(reply_markup=None)
+            msg = await callback.message.answer(
+                "<b>Выберите <b>3 карты</b>, которые говорят с вашей душой.</b>\n\n"
+                "✨ Выбранные карты появятся здесь. Когда закончите, нажмите «Трактовка»."
+            )
+
+            await msg.edit_reply_markup(reply_markup=kb.webapp_button(msg.message_id))
+            await state.update_data(tarot_new_continuation=True)
+
+        else:
+            await callback.message.edit_reply_markup(reply_markup=None)
+            await callback.message.answer(
+                "🔮 <b>Ваши бесплатные расклады закончились</b>, но Малина по-прежнему с вами!\n\n"
+                "✨ Выберите свой путь:\n"
+                "🔹 <b>Получите ещё одно бесплатное гадание</b> — пригласите друга и раскрой новую возможность.\n"
+                "🔹 <b>Получите безграничные возможности</b> — теперь вы можешь гадать сколько угодно раз, каждый день, без ограничений.\n\n"
+                f"💡 Сейчас вам доступно 0 таро-гаданий.\n\n"
+                "— Малина всегда с вами ❤️",
+                reply_markup=kb.btn_attempts,
+            )
+            await state.clear()
+    else:
+        await callback.message.edit_reply_markup(reply_markup=None)
+        await callback.message.answer(
+            "Произошла ошибка😢\nПожалуйста, начните новый расклад таро."
+        )
+        await state.clear()
+
+
 @router.callback_query(F.data.in_(["card_day", "card_day_reminder"]))
 @handle_old_queries()
 async def callback_card_day(callback: CallbackQuery, state: FSMContext):
+    await clear_tarot_keyboard_by_state(state, callback.bot, callback.from_user.id)
     await callback.answer()
 
     await state.clear()
@@ -329,7 +475,11 @@ async def callback_card_day(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "learn_more")
 @handle_old_queries()
-async def callback_learn_more(callback: CallbackQuery):
+async def callback_learn_more(callback: CallbackQuery, state: FSMContext):
+    await clear_tarot_keyboard_by_state(state, callback.bot, callback.from_user.id)
+    await callback.answer()
+    await state.clear()
+
     await callback.message.edit_text(
         "🔮 <b>Ваши бесплатные расклады закончились</b>, но Малина по-прежнему с вами!\n\n"
         "✨ Выберите свой путь:\n"
@@ -381,6 +531,8 @@ async def card_day_10am(users: list, bot: Bot):
 @router.message(Command("subscription"))
 async def command_subscription(message: Message, state: FSMContext):
     """Обработчик команды /subscription."""
+    await clear_tarot_keyboard_by_state(state, message.bot, message.from_user.id)
+
     await state.clear()
 
     user_id = message.from_user.id
@@ -430,6 +582,9 @@ async def command_subscription(message: Message, state: FSMContext):
 )
 @handle_old_queries()
 async def callback_create_subscription(callback: CallbackQuery, state: FSMContext):
+    """Обработчик создания подписки."""
+    await clear_tarot_keyboard_by_state(state, callback.bot, callback.from_user.id)
+
     await callback.answer()
     await state.clear()
 
@@ -490,6 +645,8 @@ async def callback_create_subscription(callback: CallbackQuery, state: FSMContex
 @handle_old_queries()
 async def callback_management_subscription(callback: CallbackQuery, state: FSMContext):
     """🔄 Изменить автопродление"""
+    await clear_tarot_keyboard_by_state(state, callback.bot, callback.from_user.id)
+
     await callback.answer()
     await state.clear()
 
@@ -558,6 +715,8 @@ async def callback_management_subscription(callback: CallbackQuery, state: FSMCo
 @router.callback_query(F.data == "agree_offer")
 @handle_old_queries()
 async def callback_agree_offer(callback: CallbackQuery, state: FSMContext):
+    await clear_tarot_keyboard_by_state(state, callback.bot, callback.from_user.id)
+
     """Callback обработчик для согласия с офертой."""
     try:
         await callback.answer()
@@ -607,6 +766,8 @@ async def callback_agree_offer(callback: CallbackQuery, state: FSMContext):
 @handle_old_queries()
 async def callback_agree_public_offer(callback: CallbackQuery, state: FSMContext):
     """Callback обработчик для согласия с публичной офертой."""
+
+    await clear_tarot_keyboard_by_state(state, callback.bot, callback.from_user.id)
     try:
         await callback.answer()
 
@@ -652,6 +813,7 @@ async def callback_agree_public_offer(callback: CallbackQuery, state: FSMContext
 
 async def proceed_to_payment(callback: CallbackQuery, state: FSMContext, user_id: int):
     """Общая функция для перехода к оплате"""
+
     try:
         logger.info(f"User {user_id} proceeding to payment.")
         data_subscription_text = (await state.get_data()).get("subscription_text")

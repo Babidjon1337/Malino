@@ -48,51 +48,75 @@ def contains_chinese(text: str) -> bool:
     return bool(chinese_pattern.search(text))
 
 
-async def generate_response(text, prompt):
+def message_prompt(text: str, prompt: str, args_list: list) -> dict:
+    system_prompt = prompt_data[prompt]
+
+    if len(args_list) == 0:
+        messages = [
+            {
+                "role": "system",
+                "content": system_prompt,
+            },
+            {
+                "role": "user",
+                "content": text,
+            },
+        ]
+
+    elif len(args_list) == 2:
+        messages = [
+            {
+                "role": "user",
+                "content": args_list[0],
+            },
+            {
+                "role": "assistant",
+                "content": args_list[1],
+            },
+            {
+                "role": "system",
+                "content": system_prompt,
+            },
+            {
+                "role": "user",
+                "content": text,
+            },
+        ]
+    return messages
+
+
+async def generate_response(text, prompt, *args):
+    args_list = list(args)
+
     max_retries = 4  # Всего 3 попытки
+
+    providers = [
+        "baseten",
+        "fireworks",
+        "friendli",
+        "together",
+        "nebius",
+        "parasail",
+    ]
     for attempt in range(max_retries):
         try:
-            system_prompt = prompt_data[prompt]
 
             completion = await client.chat.completions.create(
                 model="qwen/qwen3-235b-a22b-2507",
-                # model="deepseek/deepseek-chat-v3.1:free",
+                # model="deepseek/deepseek-chat-v3-0324",
                 # model="deepseek/deepseek-chat-v3-0324:free",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": system_prompt,
-                    },
-                    {
-                        "role": "user",
-                        "content": text,
-                    },
-                ],
+                messages=message_prompt(text, prompt, args_list),
                 extra_body={
                     "provider": {
-                        "order": [
-                            "baseten",
-                            "friendli",
-                            "together",
-                            "nebius",
-                            "google-vertex",
-                        ],
+                        "only": providers,
                         "sort": "throughput",
                         "allow_fallbacks": False,
                     },
-                    "reasoning": {
-                        "effort": "high",
-                        "exclude": True,
-                    },
                 },
                 extra_headers={
-                    "HTTP-Referer": "https://malinaezo.ru",
+                    "HTTP-Referer": "https://malinaezo.ru/",
                     "X-Title": "Malina bot",
                 },
-                # КРИТИЧЕСКИЕ ПАРАМЕТРЫ ДЛЯ КОНТРОЛЯ ФОРМАТА
-                # max_tokens=(
-                #     350 if prompt == "sleep" else 220
-                # ),  # Устанавливает максимальное количество токенов (слов/частей слов)
                 temperature=0.5,  # Минимум креативности
                 # frequency_penalty=0.2,  # Штрафует модель за повторение одних и тех же слов
                 # presence_penalty=0.3,  # Поощряет модель вводить новые темы и идеи
@@ -171,16 +195,32 @@ async def generate_response(text, prompt):
                 return "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
 
         except APIError as e:
-            # Обработка других ошибок API
+            error_message = str(e).lower()
+
+            # Проверяем, связана ли ошибка с конкретным провайдером
+            for provider in providers[:]:  # Используем копию для безопасного удаления
+                if provider.lower() in error_message:
+                    logger.warning(
+                        f"Обнаружена проблема с провайдером {provider}, удаляем из списка"
+                    )
+                    providers.remove(provider)
+                    continue
+
+            # Если провайдеры закончились, сразу возвращаем ошибку
+            if not providers:
+                logger.error("Все провайдеры исключены из-за ошибок")
+                return "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
+
             if attempt < max_retries - 1:
                 wait_time = 2 ** (attempt + 1)
-                logger.warning(f"Ошибка API. Ждем {wait_time} секунд...")
+                logger.warning(
+                    f"Ошибка API. Ждем {wait_time} секунд... Доступно провайдеров: {len(providers)}"
+                )
                 await asyncio.sleep(wait_time)
                 continue
             else:
                 logger.error(f"Ошибка API после всех попыток: {str(e)}")
                 return "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
-
         except AttributeError as e:
             if "'NoneType' object" in str(e):
                 logger.error(

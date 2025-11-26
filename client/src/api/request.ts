@@ -14,7 +14,6 @@ async function request(endpoint: string, method: string = "get", data?: any) {
       ? JSON.stringify({
           ...(data.user_id && { user_id: data.user_id }),
           ...(data.cards && { cards: data.cards }),
-          ...(data.question && { question: data.question }),
           ...(data.message_id && { message_id: data.message_id }),
         })
       : undefined,
@@ -38,4 +37,3 @@ async function request(endpoint: string, method: string = "get", data?: any) {
 }
 
 export default request;
-

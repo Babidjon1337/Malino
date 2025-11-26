@@ -121,20 +121,25 @@ async def mini_app_data(request: Request) -> JSONResponse:
         # выбранных картах и вопросе
         user_id = data.get("user_id")
         cards = data.get("cards", [])
-        question = (str(data.get("question", ""))).replace("%20", " ")
+
+        # question = (str(data.get("question", ""))).replace("%20", " ")
+
         message_id = data.get("message_id", "")  # Извлекаем ID сообщения для удаления
 
-        if user_id and cards and question and message_id:
+        if user_id and cards and message_id:
             # Формируем сообщение с выпавшими картами
             cards_list = ", ".join([card.get("name", "") for card in cards])
-            print(
-                f"Пользователь: {user_id}.\nКарты: {cards_list}.\nВопрос: {question}.\nID сообщения: {message_id}.\n"
-            )
 
             # Запускаем функцию обработки в фоне, не дожидаясь её завершения
 
             asyncio.create_task(
-                webapp_tarot(bot, user_id, cards_list, question, int(message_id))
+                webapp_tarot(
+                    bot,
+                    dp,
+                    user_id,
+                    cards_list,
+                    int(message_id),
+                )
             )
 
             return {"status": "ok", "message": "Processing started"}

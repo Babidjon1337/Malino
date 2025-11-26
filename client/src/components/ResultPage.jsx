@@ -60,12 +60,10 @@ const ResultPage = ({ launchParams }) => {
         return;
       }
       console.log("User ID:", launchParams.tgWebAppData.user.id);
-      console.log("question", launchParams.question);
-      console.log("question", launchParams.message_id);
+      console.log("message_id", launchParams.message_id);
 
-      const question = launchParams.question;
       const message_id = launchParams.message_id;
-      if (!question || !message_id) {
+      if (!message_id) {
         console.error("Не удалось извлечь вопрос из URL");
         return;
       }
@@ -74,7 +72,6 @@ const ResultPage = ({ launchParams }) => {
       const resultData = {
         user_id: userId,
         cards: selectedCards,
-        question: question,
         message_id: message_id,
       };
 
