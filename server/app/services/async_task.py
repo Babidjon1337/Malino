@@ -102,10 +102,11 @@ class TaskScheduler:
             user_subscription = await rq.get_user_subscription(telegram_id)
 
             tariff: str = user_subscription.tariff
-            amount_str = tariff.split("(")[1].split(")")[0]  # Получаем "790"
-            amount = (
-                "790.00" if amount_str == "99" else f"{amount_str}.00"
-            )  # Получаем "790.00"
+            if "subscription" in tariff:
+                amount_str = tariff.split("(")[1].split(")")[0]  # Получаем "300"
+                amount = (
+                    "300.00" if amount_str == "99" else f"{amount_str}.00"
+                )  # Получаем "300.00"
 
             if user_subscription.is_recurring:
                 await yookassa_service.create_recurring_payment(

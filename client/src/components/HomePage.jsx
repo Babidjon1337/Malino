@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import Card from "./Card";
 import Loader from "./Loader";
 import tarotCardsData from "../data/tarotCards";
-import cardBack from "/img/card-back/CardBack.png";
+import cardBack from "../img/card-back/CardBack.png";
 import AnimatedStars from "./AnimatedStars";
 
 // Удаляем импорт useInitData, так как инициализация уже происходит в App.jsx через useLaunchParams

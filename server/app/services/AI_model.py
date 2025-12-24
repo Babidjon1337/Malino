@@ -74,12 +74,8 @@ def message_prompt(text: str, prompt: str, args_list: list) -> dict:
                 "content": args_list[1],
             },
             {
-                "role": "system",
-                "content": system_prompt,
-            },
-            {
                 "role": "user",
-                "content": text,
+                "content": f"{system_prompt}\n\n{text}",
             },
         ]
     return messages
@@ -92,15 +88,15 @@ async def generate_response(text, prompt, *args):
 
     providers = [
         "baseten",
-        "fireworks",
+        "wandb",
         "friendli",
         "together",
         "nebius",
-        "parasail",
+        "deepinfra",
     ]
+
     for attempt in range(max_retries):
         try:
-
             completion = await client.chat.completions.create(
                 model="qwen/qwen3-235b-a22b-2507",
                 # model="deepseek/deepseek-chat-v3-0324",
@@ -122,13 +118,13 @@ async def generate_response(text, prompt, *args):
                 # presence_penalty=0.3,  # Поощряет модель вводить новые темы и идеи
             )
             if completion is None:
-                logger.error("OpenRouter API вернул None")
+                logger.error("🔴 OpenRouter API вернул None")
                 if attempt < max_retries - 1:
                     continue
                 return "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
 
             if not completion.choices:
-                logger.error("Список choices пуст в ответе API")
+                logger.error("🔴 Список choices пуст в ответе API")
                 if attempt < max_retries - 1:
                     continue
                 return "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
@@ -147,11 +143,14 @@ async def generate_response(text, prompt, *args):
                     r"<think>.*?</think>", "", response, flags=re.DOTALL | re.IGNORECASE
                 ).strip()
 
+            if "\n\n" not in response or "\n" not in response:
+                logger.warning("⚠️ Отсутствуют отступы в ответе")
+
             # Проверяем, что completion не None и содержит ожидаемую структуру
             # fmt: off
             if not response or not isinstance(response, str) or len(response.strip()) == 0:
             # fmt: on
-                logger.error("OpenRouter API возвращенная структура неожиданного ответа")
+                logger.warning("⚠️ OpenRouter API возвращенная структура неожиданного ответа")
                 continue
             
             # Проверяет, содержит ли строка хотя бы один китайский иероглиф. 北京是中国的首都
@@ -159,12 +158,12 @@ async def generate_response(text, prompt, *args):
                 if attempt < max_retries - 1:  # Не ждем после последней попытки
                     wait_time = 2 ** (attempt + 2)  # 2, 4, 8, 16 секунды
                     logger.warning(
-                        "Найдены китайский иероглиф. 北京是中国的首都\nПовторная попытка"
+                        "⚠️ Найдены китайский иероглиф. 北京是中国的首都\nПовторная попытка"
                     )
                     await asyncio.sleep(wait_time)
                     continue
                 else:
-                    logger.error("Найдены китайский иероглиф. 北京是中国的首都")
+                    logger.error("🔴 Найдены китайский иероглиф. 北京是中国的首都")
                     return "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
 
             return response
@@ -173,7 +172,7 @@ async def generate_response(text, prompt, *args):
             if attempt < max_retries - 1:  # Не ждем после последней попытки
                 wait_time = 2 ** (attempt + 3)  # 8, 16, 32, 64 секунды
                 logger.warning(
-                    f"Лимит запросов. Ждем {wait_time} секунд перед повторной попыткой..."
+                    f"⚠️ Лимит запросов. Ждем {wait_time} секунд перед повторной попыткой..."
                 )
                 await asyncio.sleep(wait_time)
                 continue
@@ -187,11 +186,11 @@ async def generate_response(text, prompt, *args):
             # Обработка таймаута
             if attempt < max_retries - 1:
                 wait_time = 2 ** (attempt + 1)
-                logger.warning(f"Таймаут запроса. Ждем {wait_time} секунд...")
+                logger.warning(f"⚠️ Таймаут запроса. Ждем {wait_time} секунд...")
                 await asyncio.sleep(wait_time)
                 continue
             else:
-                logger.error("Таймаут после всех попыток")
+                logger.error("🔴 Таймаут после всех попыток")
                 return "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
 
         except APIError as e:
@@ -201,20 +200,20 @@ async def generate_response(text, prompt, *args):
             for provider in providers[:]:  # Используем копию для безопасного удаления
                 if provider.lower() in error_message:
                     logger.warning(
-                        f"Обнаружена проблема с провайдером {provider}, удаляем из списка"
+                        f"⚠️ Обнаружена проблема с провайдером {provider}, удаляем из списка"
                     )
                     providers.remove(provider)
                     continue
 
             # Если провайдеры закончились, сразу возвращаем ошибку
             if not providers:
-                logger.error("Все провайдеры исключены из-за ошибок")
+                logger.error("🔴 Все провайдеры исключены из-за ошибок")
                 return "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
 
             if attempt < max_retries - 1:
                 wait_time = 2 ** (attempt + 1)
                 logger.warning(
-                    f"Ошибка API. Ждем {wait_time} секунд... Доступно провайдеров: {len(providers)}"
+                    f"⚠️ Ошибка API. Ждем {wait_time} секунд... Доступно провайдеров: {len(providers)}"
                 )
                 await asyncio.sleep(wait_time)
                 continue

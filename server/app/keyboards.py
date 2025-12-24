@@ -75,13 +75,13 @@ btn_attempts = InlineKeyboardMarkup(
         ],
         [
             InlineKeyboardButton(
-                text="💎 Безлимит на месяц за 790 ₽",
-                callback_data="create_subscription_790",
+                text="💎 Безлимит на месяц за 300 ₽",
+                callback_data="create_subscription_300",
             )
         ],
     ]
 )
-btn_create_subscription_99_or_790 = InlineKeyboardMarkup(
+btn_create_subscription_99_or_300 = InlineKeyboardMarkup(
     inline_keyboard=[
         [
             InlineKeyboardButton(
@@ -91,8 +91,8 @@ btn_create_subscription_99_or_790 = InlineKeyboardMarkup(
         ],
         [
             InlineKeyboardButton(
-                text="🚀 Безлимит на месяц за 790 ₽",
-                callback_data="create_subscription_790",
+                text="🚀 Безлимит на месяц за 300 ₽",
+                callback_data="create_subscription_300",
             )
         ],
     ]
@@ -205,6 +205,27 @@ btn_back_admin = InlineKeyboardMarkup(
         ]
     ]
 )
+
+btn_need_button_simple = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [
+            InlineKeyboardButton(text="✅ Добавить кнопку", callback_data="btn_yes"),
+            InlineKeyboardButton(text="❌ Без кнопки", callback_data="btn_no"),
+        ],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_admin")],
+    ]
+)
+
+btn_buy_subscription = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text="Купить подписку ✨", callback_data="subscription_message_all"
+            )
+        ]
+    ]
+)
+
 btn_send_msg = InlineKeyboardMarkup(
     inline_keyboard=[
         [

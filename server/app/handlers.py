@@ -314,38 +314,38 @@ async def webapp_tarot(
                 )
                 raise e
 
-        # Генерируем продолжение
-        continuation_response_text = f"Вопрос: {question}\n\n{response}"
+        # # Генерируем продолжение
+        # continuation_response_text = f"Вопрос: {question}\n\n{response}"
 
-        question_response = await AI.generate_response(
-            text=continuation_response_text,
-            prompt="continuation_tarot",
-        )
+        # question_response = await AI.generate_response(
+        #     text=continuation_response_text,
+        #     prompt="continuation_tarot",
+        # )
 
-        # Редактируем сообщение снова, показывая результат
-        try:
-            msg_id = await bot.send_message(
-                chat_id=user_id,
-                text=question_response,
-                reply_markup=kb.btn_continuation_tarot,
-            )
-        except TelegramBadRequest as e:
-            if "can't parse entities" in str(e):
-                question_response = re.sub(r"<[^>]+>", "", question_response)
+        # # Редактируем сообщение снова, показывая результат
+        # try:
+        #     msg_id = await bot.send_message(
+        #         chat_id=user_id,
+        #         text=question_response,
+        #         reply_markup=kb.btn_continuation_tarot,
+        #     )
+        # except TelegramBadRequest as e:
+        #     if "can't parse entities" in str(e):
+        #         question_response = re.sub(r"<[^>]+>", "", question_response)
 
-                msg_id = await bot.send_message(
-                    chat_id=user_id,
-                    text=question_response,
-                    reply_markup=kb.btn_continuation_tarot,
-                )
-            else:
-                raise e
+        #         msg_id = await bot.send_message(
+        #             chat_id=user_id,
+        #             text=question_response,
+        #             reply_markup=kb.btn_continuation_tarot,
+        #         )
+        #     else:
+        #         raise e
 
-        await state.update_data(
-            continuation_response_text=continuation_response_text,
-            question=question_response,
-            tarot_msg_id=msg_id.message_id,
-        )
+        # await state.update_data(
+        #     continuation_response_text=continuation_response_text,
+        #     question=question_response,
+        #     tarot_msg_id=msg_id.message_id,
+        # )
     except Exception as e:
         print(f"Ошибка при обработке расклада таро продолжение: {e}")
         import traceback
@@ -401,7 +401,10 @@ async def callback_card_day(callback: CallbackQuery, state: FSMContext):
     await state.clear()
 
     if callback.data == "card_day_reminder":
-        await callback.message.edit_reply_markup(reply_markup=None)
+        try:
+            await callback.message.edit_reply_markup(reply_markup=None)
+        except TelegramBadRequest:
+            pass
 
     if await rq.check_card_day(callback.from_user.id):
         msg = await callback.message.answer(
@@ -422,7 +425,8 @@ async def callback_card_day(callback: CallbackQuery, state: FSMContext):
             "В данный момент эта функция не доступна 😢\n"
             "Пожалуйста, попробуйте позже."
         ):
-            await callback.message.answer_photo(photo=file_id, parse_mode="HTML")
+            ...
+            # await callback.message.answer_photo(photo=file_id, parse_mode="HTML")
 
         try:
             await callback.message.answer(response)
@@ -573,12 +577,62 @@ async def command_subscription(message: Message, state: FSMContext):
         await message.answer(
             subscription_text,
             disable_web_page_preview=True,
-            reply_markup=kb.btn_create_subscription_99_or_790,
+            reply_markup=kb.btn_create_subscription_99_or_300,
+        )
+
+
+@router.callback_query(F.data == "subscription_message_all")
+async def subscription_message_all(callback: CallbackQuery, state: FSMContext):
+    """Обработчик команды /subscription."""
+
+    await state.clear()
+
+    await callback.message.edit_reply_markup(reply_markup=None)
+
+    user_id = callback.from_user.id
+    logger.info(f"Юзер {user_id} оправил запрос на подписку /subscription.")
+
+    user = await rq.get_user(user_id)
+
+    if user.tariff == "VIP":
+
+        await callback.message.answer(
+            f"✨ <b>Ваша подписка активна!</b>\n\n" "Действие подписки безлимито 🌟"
+        )
+        logger.info(f"Юзер {user_id} VIP")
+    elif user.tariff == "gift":
+
+        subscription = await rq.get_user_subscription(user_id)
+
+        end_date_str = subscription.end_date.strftime("%d.%m.%Y")
+        await callback.message.answer(
+            f"✨ <b>Ваша подписка активна!</b>\n\n" f"📅 Действует до: {end_date_str}"
+        )
+        logger.info(f"Юзер {user_id} gift")
+    elif user.tariff == "subscription":
+
+        subscription = await rq.get_user_subscription(user_id)
+
+        end_date_str = subscription.end_date.strftime("%d.%m.%Y")
+        await callback.message.answer(
+            f"✨ <b>Ваша подписка активна!</b>\n\n"
+            f"📅 Действует до: {end_date_str}\n"
+            f"🔄 Автопродление: {'Включено ✅' if subscription.is_recurring else 'Отключено ❌'}\n\n"
+            f"Вы можете {'отменить' if subscription.is_recurring else 'включить'} автопродление в любой момент.",
+            reply_markup=kb.btn_management_subscription,
+        )
+        logger.info(f"User {user_id} already has an active subscription.")
+    else:
+
+        await callback.message.answer(
+            subscription_text,
+            disable_web_page_preview=True,
+            reply_markup=kb.btn_create_subscription_99_or_300,
         )
 
 
 @router.callback_query(
-    F.data.in_(["create_subscription_99", "create_subscription_790"])
+    F.data.in_(["create_subscription_99", "create_subscription_300"])
 )
 @handle_old_queries()
 async def callback_create_subscription(callback: CallbackQuery, state: FSMContext):
@@ -591,7 +645,7 @@ async def callback_create_subscription(callback: CallbackQuery, state: FSMContex
     subscription_text = (
         subscription_text_99
         if callback.data == "create_subscription_99"
-        else subscription_text_790
+        else subscription_text_300
     )
 
     user_id = callback.from_user.id
@@ -821,7 +875,7 @@ async def proceed_to_payment(callback: CallbackQuery, state: FSMContext, user_id
         subscription_text = (
             subscription_text_99
             if data_subscription_text == "create_subscription_99"
-            else subscription_text_790
+            else subscription_text_300
         )
         # Меняем текст сообщения
         sent_message = await callback.message.edit_text(
@@ -874,7 +928,7 @@ async def message_email(message: Message, state: FSMContext):
         amount = (
             "99.00"
             if "Пробная подписка — 99 ₽ / 24 часа" in payment_message.text
-            else "790.00"
+            else "300.00"
         )
 
         # Создаем ссылку на оплату
