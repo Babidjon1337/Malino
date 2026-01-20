@@ -4,20 +4,21 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   server: {
-    host: "0.0.0.0", // Разрешить доступ со всех адресов
-    port: 5173, // Порт приложения
-    strictPort: true, // Не искать свободные порты
+    host: "0.0.0.0",
+    port: 5173,
+    strictPort: true,
     allowedHosts: [
-      // Разрешенные хосты
       ".lhr.life",
       ".ru.tuna.am",
       "localhost",
-      ".serveo.net", // Разрешить все поддомены serveo.net
-      ".ngrok.io", // Разрешить все поддомены ngrok.io
-      ".ngrok-free.app", // Для нового ngrok
+      ".serveo.net",
+      ".ngrok.io",
+      ".ngrok-free.app",
     ],
   },
   build: {
+    // !!! ВОТ ЭТА СТРОКА ЧИНИТ СЕРЫЙ ЭКРАН НА ТЕЛЕФОНЕ !!!
+    target: "es2020",
     outDir: "dist",
     assetsDir: "assets",
   },

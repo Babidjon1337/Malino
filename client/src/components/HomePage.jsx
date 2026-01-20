@@ -4,34 +4,32 @@ import { motion } from "framer-motion";
 import Card from "./Card";
 import Loader from "./Loader";
 import tarotCardsData from "../data/tarotCards";
-import cardBack from "../img/card-back/CardBack.png";
 import AnimatedStars from "./AnimatedStars";
 
-// Удаляем импорт useInitData, так как инициализация уже происходит в App.jsx через useLaunchParams
+// --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
+// Мы удалили "import cardBack from ...", который вызывал ошибку.
+// Теперь мы просто указываем путь к файлу в папке public (начинается со слэша /)
+const cardBack = "/img/card-back/CardBack.png";
+// -----------------------
 
 const HomePage = () => {
   const [cards, setCards] = useState([]);
   const [flippedCount, setFlippedCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isBackImageLoaded, setIsBackImageLoaded] = useState(false);
-  // cardBack должен быть импортирован или определен
-  // Удаляем обработку visibilitychange, так как инициализация теперь происходит в main.jsx через init()
   const navigate = useNavigate();
-  // Удаляем использование viewport хука, переходим на WebApp API
-  // Запрашиваем полноэкранный режим через WebApp API
+
+  // Логика восстановления состояния при возврате (expand() убрали, как договаривались)
   useEffect(() => {
     if (window.Telegram?.WebApp) {
-      window.Telegram.WebApp.expand();
-      window.Telegram.WebApp.requestFullscreen();
-
-      // Обработчик для восстановления состояния при возвращении в приложение
       const handleRestore = () => {
         setCards((prevCards) =>
-          prevCards.map((card) => ({ ...card, flipped: false }))
+          prevCards.map((card) => ({ ...card, flipped: false })),
         );
         setFlippedCount(0);
       };
 
+      window.Telegram.WebApp.enableClosingConfirmation();
       window.Telegram.WebApp.onEvent("viewportChanged", handleRestore);
       return () => {
         window.Telegram.WebApp.offEvent("viewportChanged", handleRestore);
@@ -39,10 +37,11 @@ const HomePage = () => {
     }
   }, []);
 
-  // Рассчитываем размер карточек в зависимости от ширины экрана
+  // Расчет размеров карт
   const calculateCardSize = () => {
-    const screenWidth =
-      window.Telegram?.WebApp?.viewportWidth || window.innerWidth;
+    const screenWidth = window.innerWidth;
+
+    if (screenWidth < 350) return { width: 80, height: 130 };
     if (screenWidth < 400) return { width: 90, height: 145 };
     if (screenWidth < 600) return { width: 110, height: 170 };
     return { width: 140, height: 210 };
@@ -55,21 +54,11 @@ const HomePage = () => {
       setCardSize(calculateCardSize());
     };
 
-    // Используем WebApp API для отслеживания изменений размеров
-    if (window.Telegram?.WebApp) {
-      window.Telegram.WebApp.onEvent("viewport_changed", handleResize);
-      handleResize();
-    } else {
-      window.addEventListener("resize", handleResize);
-      handleResize();
-    }
+    window.addEventListener("resize", handleResize);
+    handleResize();
 
     return () => {
-      if (window.Telegram?.WebApp) {
-        window.Telegram.WebApp.offEvent("viewport_changed", handleResize);
-      } else {
-        window.removeEventListener("resize", handleResize);
-      }
+      window.removeEventListener("resize", handleResize);
     };
   }, []);
 
@@ -77,7 +66,7 @@ const HomePage = () => {
     if (flippedCount >= 3) return;
 
     setCards(
-      cards.map((card) => (card.id === id ? { ...card, flipped: true } : card))
+      cards.map((card) => (card.id === id ? { ...card, flipped: true } : card)),
     );
 
     setFlippedCount((prev) => prev + 1);
@@ -85,7 +74,6 @@ const HomePage = () => {
 
   useEffect(() => {
     if (flippedCount === 3) {
-      // Используем requestAnimationFrame для синхронизации с рендерингом
       const timer = setTimeout(() => {
         requestAnimationFrame(() => {
           const selectedCards = cards.filter((card) => card.flipped);
@@ -98,17 +86,15 @@ const HomePage = () => {
 
   useEffect(() => {
     const loadData = () => {
-      // Генерация 6 уникальных случайных индексов
       const indices = new Set();
       while (indices.size < 6) {
         indices.add(Math.floor(Math.random() * tarotCardsData.length));
       }
-      // Создание массива выбранных карт с новыми ID
       const shuffled = Array.from(indices).map((index, i) => ({
         ...tarotCardsData[index],
         id: i + 1,
       }));
-      // Используем Promise.race для надежной загрузки изображения с таймаутом
+
       Promise.race([
         new Promise((resolve) => {
           const img = new Image();
@@ -136,8 +122,6 @@ const HomePage = () => {
   return (
     <div className="home-page">
       <AnimatedStars />
-      {/* <div className="mystic-background"></div> */}
-
       <Loader isLoading={isLoading} />
 
       {!isLoading && isBackImageLoaded && (
@@ -166,6 +150,7 @@ const HomePage = () => {
             className="cards-grid"
             style={{
               gridTemplateColumns: `repeat(3, ${cardSize.width}px)`,
+              justifyContent: "center",
             }}
           >
             {cards.map((card) => (

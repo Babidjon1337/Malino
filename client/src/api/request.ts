@@ -1,4 +1,4 @@
-const DEFAULT_URL = "https://0b63ae40ccb3.ngrok-free.app";
+const DEFAULT_URL = "https://malinaezo.ru";
 
 async function request(endpoint: string, method: string = "get", data?: any) {
   const url = `${DEFAULT_URL}/api/${endpoint}`;

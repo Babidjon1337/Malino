@@ -1,10 +1,35 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
     <title>Malino</title>
     <link rel="icon" href="/img/card-back/CardBack.png" />
+
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+    <script>
+      try {
+        if (window.Telegram && window.Telegram.WebApp) {
+          var tg = window.Telegram.WebApp;
+          tg.ready();
+
+          var platform = tg.platform;
+          console.log("Current platform:", platform); // Для отладки
+
+          // Разворачиваем ТОЛЬКО на мобильных устройствах
+          if (platform === "ios" || platform === "android") {
+            tg.expand();
+          }
+          // На всех остальных платформах (tdesktop, weba, macos) экран останется стандартным
+        }
+      } catch (e) {
+        console.error("TG Init Error:", e);
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
