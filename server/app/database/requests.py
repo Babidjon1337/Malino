@@ -294,7 +294,7 @@ async def activ_or_reactivate_subscription(telegram_id: int) -> None:
         await session.commit()
 
 
-async def update_cansel_subscription(telegram_id: int) -> None:
+async def update_cansel_subscription(telegram_id: int) -> bool:
     """Отменяет подписку пользователя если она payment_attempts >= 2"""
     async with async_session() as session:
         subscription = await session.scalar(
@@ -309,6 +309,9 @@ async def update_cansel_subscription(telegram_id: int) -> None:
             await session.execute(
                 delete(Subscription).where(Subscription.telegram_id == telegram_id)
             )
+            await session.commit()
+            return True
+
         elif subscription:
             await session.execute(
                 update(Subscription)
@@ -318,7 +321,8 @@ async def update_cansel_subscription(telegram_id: int) -> None:
                     end_date=subscription.end_date + timedelta(days=1),
                 )
             )
-        await session.commit()
+            await session.commit()
+            return False
 
 
 async def del_sub(telegram_id) -> None:

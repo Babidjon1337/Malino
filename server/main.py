@@ -260,7 +260,18 @@ async def yookassa_webhook(request: Request):
             # Платеж отменен
             logger.info(f"Платеж отменен: {payment_id}")
             if recurrent:
-                await rq.update_cansel_subscription(telegram_id)
+                if await rq.update_cansel_subscription(telegram_id):
+                    logger.info(
+                        f"Подписка пользователя {telegram_id} отменена. 3 попытки оплаты."
+                    )
+                    await bot.send_message(
+                        chat_id=telegram_id,
+                        text=(
+                            "⚠️ <b>Ваша подписка была отменена.</b>\n\n"
+                            "Мы не смогли списать оплату за подписку после 3 попыток.\n"
+                            "Чтобы продолжить пользоваться всеми функциями бота, пожалуйста, оформите новую подписку."
+                        ),
+                    )
 
         else:
             logger.info(f"Получено неизвестное событие {event_type}: {payment_id}")
