@@ -6,11 +6,7 @@ import Loader from "./Loader";
 import tarotCardsData from "../data/tarotCards";
 import AnimatedStars from "./AnimatedStars";
 
-// --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
-// Мы удалили "import cardBack from ...", который вызывал ошибку.
-// Теперь мы просто указываем путь к файлу в папке public (начинается со слэша /)
 const cardBack = "/img/card-back/CardBack.png";
-// -----------------------
 
 const HomePage = () => {
   const [cards, setCards] = useState([]);
@@ -19,7 +15,7 @@ const HomePage = () => {
   const [isBackImageLoaded, setIsBackImageLoaded] = useState(false);
   const navigate = useNavigate();
 
-  // Логика восстановления состояния при возврате (expand() убрали, как договаривались)
+  // Логика восстановления состояния при возврате
   useEffect(() => {
     if (window.Telegram?.WebApp) {
       const handleRestore = () => {
@@ -63,7 +59,14 @@ const HomePage = () => {
   }, []);
 
   const handleCardClick = (id) => {
-    if (flippedCount >= 3) return;
+    // 1. Сначала находим карту, на которую нажали
+    const clickedCard = cards.find((c) => c.id === id);
+
+    // 2. Проверяем условия:
+    // - Если уже выбрано 3 карты - ничего не делаем
+    // - Если эта карта УЖЕ перевернута - тоже ничего не делаем (счетчик не крутим),
+    //   но так как disabled=false, визуально она "дернется" (анимация Card.jsx сработает)
+    if (flippedCount >= 3 || (clickedCard && clickedCard.flipped)) return;
 
     setCards(
       cards.map((card) => (card.id === id ? { ...card, flipped: true } : card)),
