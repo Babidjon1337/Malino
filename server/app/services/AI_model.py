@@ -93,6 +93,7 @@ async def generate_response(text, prompt, *args):
         "together",
         "nebius",
         "deepinfra",
+        "novita",
     ]
 
     for attempt in range(max_retries):
