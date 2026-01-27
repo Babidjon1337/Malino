@@ -110,6 +110,22 @@ async def callback_back_to_start(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer(start_text, reply_markup=kb.menu_start)
 
 
+@router.callback_query(F.data == "back_to_subscription")
+@handle_old_queries()
+async def callback_back_to_subscription(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await state.clear()
+
+    await callback.message.edit_text(
+        "<b>✨ Выберите свой путь:</b>\n\n"
+        "🔹 <b>Получите ещё одно бесплатное гадание</b> — пригласите друга и раскрой новую возможность.\n"
+        "🔹 <b>Получите безграничные возможности</b> — теперь вы можете гадать сколько угодно раз, каждый день, без ограничений.\n\n"
+        f"💡 Сейчас вам доступно {await rq.caunt_taro(callback.from_user.id)} таро-гаданий.\n\n"
+        "— Малина всегда с вами ❤️",
+        reply_markup=kb.btn_attempts,
+    )
+
+
 @router.callback_query(F.data == "bonus_url")
 @handle_old_queries()
 async def callback_bonus_url(callback: CallbackQuery, state: FSMContext):
@@ -145,7 +161,7 @@ async def callback_sleep(callback: CallbackQuery, state: FSMContext):
             "🌙 <b>Сонник доступен только обладателю подписки</b> — чтобы расшифровать сны глубже, вам нужно стать Premium пользователем.\n\n"
             "✨ Выберите свой путь:\n"
             "🔹 <b>Получите ещё одно бесплатное гадание</b> — пригласите друга и раскрой новую возможность.\n"
-            "🔹 <b>Получите безграничные возможности</b> — теперь вы можешь гадать сколько угодно раз, каждый день, без ограничений.\n\n"
+            "🔹 <b>Получите безграничные возможности</b> — теперь вы можете гадать сколько угодно раз, каждый день, без ограничений.\n\n"
             f"💡 Сейчас вам доступно {await rq.caunt_taro(callback.from_user.id)} таро-гаданий.\n\n"
             "— Малина всегда с вами ❤️",
             reply_markup=kb.btn_attempts,
@@ -205,7 +221,7 @@ async def callback_tarot(callback: CallbackQuery, state: FSMContext):
             "🔮 <b>Ваши бесплатные расклады закончились</b>, но Малина по-прежнему с вами!\n\n"
             "✨ Выберите свой путь:\n"
             "🔹 <b>Получите ещё одно бесплатное гадание</b> — пригласите друга и раскрой новую возможность.\n"
-            "🔹 <b>Получите безграничные возможности</b> — теперь вы можешь гадать сколько угодно раз, каждый день, без ограничений.\n\n"
+            "🔹 <b>Получите безграничные возможности</b> — теперь вы можете гадать сколько угодно раз, каждый день, без ограничений.\n\n"
             f"💡 Сейчас вам доступно 0 таро-гаданий.\n\n"
             "— Малина всегда с вами ❤️",
             reply_markup=kb.btn_attempts,
@@ -378,7 +394,7 @@ async def callback_continuation_tarot(callback: CallbackQuery, state: FSMContext
                 "🔮 <b>Ваши бесплатные расклады закончились</b>, но Малина по-прежнему с вами!\n\n"
                 "✨ Выберите свой путь:\n"
                 "🔹 <b>Получите ещё одно бесплатное гадание</b> — пригласите друга и раскрой новую возможность.\n"
-                "🔹 <b>Получите безграничные возможности</b> — теперь вы можешь гадать сколько угодно раз, каждый день, без ограничений.\n\n"
+                "🔹 <b>Получите безграничные возможности</b> — теперь вы можете гадать сколько угодно раз, каждый день, без ограничений.\n\n"
                 f"💡 Сейчас вам доступно 0 таро-гаданий.\n\n"
                 "— Малина всегда с вами ❤️",
                 reply_markup=kb.btn_attempts,
@@ -425,8 +441,7 @@ async def callback_card_day(callback: CallbackQuery, state: FSMContext):
             "В данный момент эта функция не доступна 😢\n"
             "Пожалуйста, попробуйте позже."
         ):
-            ...
-            # await callback.message.answer_photo(photo=file_id, parse_mode="HTML")
+            await callback.message.answer_photo(photo=file_id, parse_mode="HTML")
 
         try:
             await callback.message.answer(response)
@@ -488,7 +503,7 @@ async def callback_learn_more(callback: CallbackQuery, state: FSMContext):
         "🔮 <b>Ваши бесплатные расклады закончились</b>, но Малина по-прежнему с вами!\n\n"
         "✨ Выберите свой путь:\n"
         "🔹 <b>Получите ещё одно бесплатное гадание</b> — пригласите друга и раскрой новую возможность.\n"
-        "🔹 <b>Получите безграничные возможности</b> — теперь вы можешь гадать сколько угодно раз, каждый день, без ограничений.\n\n"
+        "🔹 <b>Получите безграничные возможности</b> — теперь вы можете гадать сколько угодно раз, каждый день, без ограничений.\n\n"
         f"💡 Сейчас вам доступно 0 таро-гаданий.\n\n"
         "— Малина всегда с вами ❤️",
         reply_markup=kb.btn_attempts,
@@ -574,10 +589,11 @@ async def command_subscription(message: Message, state: FSMContext):
         logger.info(f"User {user_id} already has an active subscription.")
     else:
 
-        await message.answer(
-            subscription_text,
-            disable_web_page_preview=True,
-            reply_markup=kb.btn_create_subscription_99_or_300,
+        mes_payment = await message.answer(subscription_text)
+        await mes_payment.edit_reply_markup(
+            reply_markup=kb.btn_web_payment(
+                mes_payment.message_id, message.from_user.id
+            )
         )
 
 
@@ -586,6 +602,7 @@ async def subscription_message_all(callback: CallbackQuery, state: FSMContext):
     """Обработчик команды /subscription."""
 
     await state.clear()
+    await callback.answer()
 
     await callback.message.edit_reply_markup(reply_markup=None)
 
@@ -624,74 +641,14 @@ async def subscription_message_all(callback: CallbackQuery, state: FSMContext):
         logger.info(f"User {user_id} already has an active subscription.")
     else:
 
-        await callback.message.answer(
+        mes_payment = await callback.message.edit_text(
             subscription_text,
             disable_web_page_preview=True,
-            reply_markup=kb.btn_create_subscription_99_or_300,
         )
-
-
-@router.callback_query(
-    F.data.in_(["create_subscription_99", "create_subscription_300"])
-)
-@handle_old_queries()
-async def callback_create_subscription(callback: CallbackQuery, state: FSMContext):
-    """Обработчик создания подписки."""
-    await clear_tarot_keyboard_by_state(state, callback.bot, callback.from_user.id)
-
-    await callback.answer()
-    await state.clear()
-
-    subscription_text = (
-        subscription_text_99
-        if callback.data == "create_subscription_99"
-        else subscription_text_300
-    )
-
-    user_id = callback.from_user.id
-    logger.info(f"Юзер {user_id} оправил запрос на подписку.")
-
-    user = await rq.get_user(user_id)
-
-    if user.tariff == "VIP":
-
-        await callback.message.edit_text(
-            f"✨ <b>Ваша подписка активна!</b>\n\n" "Действие подписки безлимито 🌟"
-        )
-        logger.info(f"Юзер {user_id} VIP")
-    elif user.tariff == "subscription":
-
-        subscription = await rq.get_user_subscription(user_id)
-
-        end_date_str = subscription.end_date.strftime("%d.%m.%Y")
-        await callback.message.edit_text(
-            f"✨ <b>Ваша подписка активна!</b>\n\n"
-            f"📅 Действует до: {end_date_str}\n"
-            f"🔄 Автопродление: {'Включено ✅' if subscription.is_recurring else 'Отключено ❌'}\n\n"
-            f"Вы можете {'отменить' if subscription.is_recurring else 'включить'} автопродление в любой момент.",
-            reply_markup=kb.btn_management_subscription,
-        )
-        logger.info(f"User {user_id} already has an active subscription.")
-    else:
-        # --- Создание ссылки ---
-        logger.info(f"User {user_id} requested /dis.")
-
-        # Сбрасываем состояние пользователя
-        await state.clear()
-
-        await state.set_state(AgreementStates.awaiting_offer_agreement)
-        await state.update_data(
-            agreed_to_offer=False,
-            agreed_to_public_offer=False,
-            subscription_text=callback.data,
-        )
-        # Отправляем сообщение с клавиатурой и устанавливаем начальное состояние
-        await callback.message.answer(
-            subscription_text,
-            disable_web_page_preview=True,
-            reply_markup=kb.get_dis_keyboard(
-                agreed_to_offer=False, agreed_to_public_offer=False
-            ),
+        await mes_payment.edit_reply_markup(
+            reply_markup=kb.btn_web_payment(
+                mes_payment.message_id, callback.from_user.id, True
+            )
         )
 
 
@@ -764,198 +721,3 @@ async def callback_management_subscription(callback: CallbackQuery, state: FSMCo
 # async def message_text(message: Message, state: FSMContext):
 #     await state.clear()
 #     await message.answer("Я тебя не понимаю😢")
-
-
-@router.callback_query(F.data == "agree_offer")
-@handle_old_queries()
-async def callback_agree_offer(callback: CallbackQuery, state: FSMContext):
-    await clear_tarot_keyboard_by_state(state, callback.bot, callback.from_user.id)
-
-    """Callback обработчик для согласия с офертой."""
-    try:
-        await callback.answer()
-
-        user_id = callback.from_user.id
-        logger.info(f"User {user_id} toggled offer agreement.")
-
-        # Получаем текущее состояние данных FSM
-        user_data = await state.get_data()
-
-        # Безопасное получение значений с дефолтом False
-        current_offer = user_data.get("agreed_to_offer", False)
-        current_public_offer = user_data.get("agreed_to_public_offer", False)
-
-        # Инвертируем значение
-        new_offer_value = not current_offer
-
-        # Обновляем данные состояния
-        await state.update_data(
-            agreed_to_offer=new_offer_value, agreed_to_public_offer=current_public_offer
-        )
-
-        await state.set_state(AgreementStates.awaiting_offer_agreement)
-
-        # Обновляем клавиатуру
-        try:
-            await callback.message.edit_reply_markup(
-                reply_markup=kb.get_dis_keyboard(
-                    agreed_to_offer=new_offer_value,
-                    agreed_to_public_offer=current_public_offer,
-                )
-            )
-        except Exception as e:
-            logger.warning(f"Could not update keyboard: {e}")
-
-        # Проверяем, согласен ли пользователь с обоими пунктами
-        if new_offer_value and current_public_offer:
-            await proceed_to_payment(callback, state, user_id)
-        elif not current_public_offer:
-            await state.set_state(AgreementStates.awaiting_public_offer_agreement)
-
-    except Exception as e:
-        logger.error(f"Error in callback_agree_offer: {e}")
-
-
-@router.callback_query(F.data == "agree_public_offer")
-@handle_old_queries()
-async def callback_agree_public_offer(callback: CallbackQuery, state: FSMContext):
-    """Callback обработчик для согласия с публичной офертой."""
-
-    await clear_tarot_keyboard_by_state(state, callback.bot, callback.from_user.id)
-    try:
-        await callback.answer()
-
-        user_id = callback.from_user.id
-        logger.info(f"User {user_id} toggled public offer agreement.")
-
-        # Получаем текущее состояние данных FSM
-        user_data = await state.get_data()
-        # Безопасное получение значений с дефолтом False
-        current_offer = user_data.get("agreed_to_offer", False)
-        current_public_offer = user_data.get("agreed_to_public_offer", False)
-
-        # Инвертируем значение
-        new_public_offer_value = not current_public_offer
-
-        # Обновляем данные состояния
-        await state.update_data(
-            agreed_to_offer=current_offer, agreed_to_public_offer=new_public_offer_value
-        )
-
-        await state.set_state(AgreementStates.awaiting_offer_agreement)
-
-        # Обновляем клавиатуру
-        try:
-            await callback.message.edit_reply_markup(
-                reply_markup=kb.get_dis_keyboard(
-                    agreed_to_offer=current_offer,
-                    agreed_to_public_offer=new_public_offer_value,
-                )
-            )
-        except Exception as e:
-            logger.warning(f"Could not update keyboard: {e}")
-
-        # Проверяем, согласен ли пользователь с обоими пунктами
-        if current_offer and new_public_offer_value:
-            await proceed_to_payment(callback, state, user_id)
-        elif not current_offer:
-            await state.set_state(AgreementStates.awaiting_offer_agreement)
-
-    except Exception as e:
-        logger.error(f"Error in callback_agree_public_offer: {e}")
-
-
-async def proceed_to_payment(callback: CallbackQuery, state: FSMContext, user_id: int):
-    """Общая функция для перехода к оплате"""
-
-    try:
-        logger.info(f"User {user_id} proceeding to payment.")
-        data_subscription_text = (await state.get_data()).get("subscription_text")
-
-        subscription_text = (
-            subscription_text_99
-            if data_subscription_text == "create_subscription_99"
-            else subscription_text_300
-        )
-        # Меняем текст сообщения
-        sent_message = await callback.message.edit_text(
-            subscription_text,
-            reply_markup=None,
-            disable_web_page_preview=True,
-        )
-
-        # Устанавливаем состояние "отправка почты"
-        await state.clear()
-        await state.set_state(email_data.email)
-        email_message = await callback.message.answer(
-            "Напиши свою почту для отправки чека:"
-        )
-        await state.update_data(
-            payment_message=sent_message, email_message=email_message.message_id
-        )
-
-    except Exception as e:
-        logger.error(f"Error in proceed_to_payment: {e}")
-        # Можно отправить сообщение об ошибке пользователю
-        await callback.message.answer("Произошла ошибка, попробуйте еще раз.")
-
-
-@router.message(email_data.email)
-async def message_email(message: Message, state: FSMContext):
-    # Получаем объект сообщениий из состояния
-    user_data = await state.get_data()
-
-    payment_message: Message = user_data.get("payment_message")
-    email_message = user_data.get("email_message")
-
-    user_message = message.text
-    await message.delete()
-    # Проверяем, является ли введенный текст валидным email
-    email_pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
-
-    if re.match(email_pattern, user_message):
-        await message.bot.delete_message(
-            chat_id=message.from_user.id, message_id=email_message
-        )
-
-        await payment_message.edit_text(
-            text=payment_message.text + f"\n\n✅ Ваша почта принята: {user_message}\n"
-            "Теперь вы можете перейти к оплате.",
-            reply_markup=None,
-            disable_web_page_preview=True,
-        )
-
-        amount = (
-            "99.00"
-            if "Пробная подписка — 99 ₽ / 24 часа" in payment_message.text
-            else "300.00"
-        )
-
-        # Создаем ссылку на оплату
-        payment = await yookassa_service.create_payment_link(
-            user_id=message.from_user.id,
-            message_id=payment_message.message_id,
-            amount=amount,
-            email=user_message,
-        )
-        payment_link = payment.confirmation.confirmation_url
-
-        # Редактируем сообщение с ссылкой на оплату
-        await payment_message.edit_reply_markup(
-            reply_markup=kb.subscription_payment(payment_link),
-        )
-
-        await state.clear()
-
-    else:
-
-        # Email невалиден, просим ввести снова
-        try:
-            email_message = await message.bot.edit_message_text(
-                chat_id=message.from_user.id,
-                message_id=email_message,
-                text="Пожалуйста, введите <b>корректный email...</b>\n\nНапиши свою почту для отправки чека:",
-            )
-            await state.update_data(email_message=email_message.message_id)
-        except:
-            pass

@@ -1,5 +1,6 @@
 @import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap");
 
+/* === НАЧАЛО ТВОЕГО ОРИГИНАЛЬНОГО КОДА === */
 * {
   margin: 0;
   padding: 0;
@@ -142,7 +143,8 @@ body {
   left: 0;
   width: 100%;
   height: 100%;
-  background: radial-gradient(
+  background:
+    radial-gradient(
       circle at 20% 30%,
       rgba(109, 91, 142, 0.15) 0%,
       transparent 40%
@@ -415,7 +417,8 @@ body {
 }
 
 .result-page .mystic-background::after {
-  background: radial-gradient(
+  background:
+    radial-gradient(
       circle at 10% 20%,
       rgba(109, 91, 142, 0.2) 0%,
       transparent 40%
@@ -467,4 +470,463 @@ body {
   100% {
     transform: rotate(360deg);
   }
+}
+/* === КОНЕЦ ТВОЕГО ОРИГИНАЛЬНОГО КОДА === */
+
+/* === НОВЫЕ СТИЛИ ДЛЯ PAYMENT PAGE (ИСПРАВЛЕННЫЕ) === */
+
+:root {
+  --bg-deep: #0f0c29;
+  --bg-purple: #302b63;
+  --bg-black: #24243e;
+  --pay-gold: #ffd700;
+  --gold-glow: rgba(255, 215, 0, 0.4);
+  --error-red: #ff4b4b;
+  --error-glow: rgba(255, 75, 75, 0.4);
+  --glass: rgba(255, 255, 255, 0.05);
+  --glass-active: rgba(255, 215, 0, 0.1);
+  --glass-border: rgba(255, 255, 255, 0.1);
+}
+
+.payment-page-container {
+  /* ФИКС ГРАНИЦ И СКРОЛЛА */
+  position: fixed; /* Фиксируем относительно окна браузера */
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh; /* ИЛИ 100dvh если поддерживается */
+  height: 100dvh; /* Для мобильных браузеров */
+
+  margin: 0;
+  padding: 20px;
+  box-sizing: border-box;
+
+  display: flex;
+  flex-direction: column;
+  overflow: hidden; /* Запрет скролла внутри */
+  z-index: 99999; /* Поверх всего (даже поверх паддингов .app) */
+
+  /* Фон */
+  background: linear-gradient(
+    135deg,
+    var(--bg-deep),
+    var(--bg-purple),
+    var(--bg-black)
+  );
+  color: #e0e0e0;
+}
+
+/* Звездочки */
+.payment-page-container::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image:
+    radial-gradient(white, rgba(255, 255, 255, 0.2) 2px, transparent 3px),
+    radial-gradient(white, rgba(255, 255, 255, 0.15) 1px, transparent 2px),
+    radial-gradient(white, rgba(255, 255, 255, 0.1) 2px, transparent 3px);
+  background-size:
+    550px 550px,
+    350px 350px,
+    250px 250px;
+  background-position:
+    0 0,
+    40px 60px,
+    130px 270px;
+  opacity: 0.2;
+  z-index: 0;
+  pointer-events: none;
+  animation: starsMove 100s linear infinite;
+}
+
+@keyframes starsMove {
+  from {
+    background-position:
+      0 0,
+      40px 60px,
+      130px 270px;
+  }
+  to {
+    background-position:
+      550px 550px,
+      390px 410px,
+      380px 520px;
+  }
+}
+
+/* Обертка контента */
+.content-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center; /* Вертикальный центр */
+  align-items: center; /* Горизонтальный центр (ФИКС КНОПКИ) */
+  width: 100%;
+  max-width: 400px;
+  margin: 0 auto;
+  position: relative;
+  z-index: 2;
+}
+
+/* Чтобы внутренние блоки (тарифы, инпуты) растягивались на всю ширину */
+.content-wrapper > * {
+  width: 100%;
+}
+
+/* Заголовки */
+.payment-page-container h1 {
+  font-family: "Cinzel", serif;
+  text-align: center;
+  color: var(--pay-gold);
+  text-shadow: 0 0 10px var(--gold-glow);
+  font-size: 30px;
+  margin: 0 0 5px 0;
+  letter-spacing: 1px;
+}
+
+.payment-page-container .subtitle {
+  text-align: center;
+  color: #a0a0a0;
+  opacity: 1;
+  font-size: 13px;
+  margin-bottom: 40px;
+}
+
+/* Тарифы */
+.tariffs-container {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 10px;
+  width: 100%; /* Убеждаемся */
+}
+
+.tariff-card {
+  flex: 1;
+  background: var(--glass);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  padding: 15px 10px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.tariff-card:not(.disabled-card):hover {
+  transform: translateY(-2px);
+}
+
+.tariff-card.active {
+  background: var(--glass-active);
+  border-color: var(--pay-gold);
+  box-shadow:
+    0 0 20px var(--gold-glow),
+    inset 0 0 10px var(--gold-glow);
+  transform: scale(1.02);
+}
+
+.tariff-card.active::before {
+  content: "";
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(
+    circle,
+    rgba(255, 215, 0, 0.2) 0%,
+    transparent 60%
+  );
+  animation: pulseGlow 3s infinite;
+}
+
+.disabled-card {
+  opacity: 0.6;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.tariff-name {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #a0a0a0;
+  opacity: 1;
+  margin-bottom: 5px;
+}
+.tariff-price {
+  font-family: "Cinzel", serif;
+  font-size: 28px;
+  color: #fff;
+  margin: 5px 0;
+  font-weight: 700;
+}
+.tariff-price span {
+  font-size: 16px;
+  color: var(--pay-gold);
+}
+.tariff-desc {
+  font-size: 11px;
+  color: #e0e0e0;
+  opacity: 0.8;
+  line-height: 1.3;
+}
+
+.badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  background: var(--pay-gold);
+  color: #0f0c29;
+  font-size: 9px;
+  font-weight: bold;
+  padding: 3px 8px;
+  border-bottom-left-radius: 8px;
+  text-transform: uppercase;
+}
+
+/* Инпуты */
+.payment-page-container .input-group {
+  position: relative;
+  width: 100%;
+  top: 15px;
+}
+.payment-page-container input[type="email"] {
+  width: 100%;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  color: #fff;
+  font-family: "Montserrat", sans-serif;
+  font-size: 16px;
+  outline: none;
+  transition: all 0.3s ease;
+  box-sizing: border-box;
+}
+.payment-page-container input[type="email"]:focus {
+  border-color: var(--pay-gold);
+  box-shadow: 0 0 15px var(--gold-glow);
+}
+.payment-page-container input[type="email"]:disabled {
+  background: rgba(0, 0, 0, 0.5);
+  color: rgba(255, 255, 255, 0.5);
+  cursor: not-allowed;
+}
+.input-error {
+  border-color: var(--error-red) !important;
+  box-shadow: 0 0 10px var(--error-glow) !important;
+  animation: shake 0.4s ease-in-out;
+}
+.input-hint {
+  font-size: 10px;
+  color: #a0a0a0;
+  opacity: 0.7;
+  margin-top: 5px;
+  margin-bottom: 40px;
+  margin-left: 5px;
+}
+
+/* Чекбоксы */
+.payment-page-container .checkbox-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 15px;
+  border-radius: 12px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.checkbox-title {
+  font-size: 14px;
+  color: #e0e0e0;
+  margin-bottom: 5px;
+  font-weight: 600;
+}
+.checkbox-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+  position: relative;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #a0a0a0;
+  opacity: 1;
+}
+.checkbox-item:hover {
+  color: #e0e0e0;
+}
+.checkbox-item input {
+  position: absolute;
+  opacity: 0;
+  cursor: pointer;
+  height: 0;
+  width: 0;
+}
+.checkmark {
+  position: relative;
+  top: 2px;
+  height: 20px;
+  width: 20px;
+  flex-shrink: 0;
+  background-color: transparent;
+  border: 1px solid #a0a0a0;
+  border-radius: 4px;
+  transition: all 0.3s;
+}
+.checkbox-item input:checked ~ .checkmark {
+  background-color: var(--pay-gold);
+  border-color: var(--pay-gold);
+  box-shadow: 0 0 10px var(--gold-glow);
+}
+.checkmark:after {
+  content: "";
+  position: absolute;
+  display: none;
+  left: 6px;
+  top: 2px;
+  width: 5px;
+  height: 10px;
+  border: solid #0f0c29;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.checkbox-item input:checked ~ .checkmark:after {
+  display: block;
+}
+.checkbox-item a {
+  color: var(--pay-gold);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--pay-gold);
+}
+
+/* Кнопка */
+.main-button {
+  width: 100%; /* Растягиваем */
+  padding: 18px;
+  background: linear-gradient(45deg, #ffd700, #fdb931);
+  color: #0f0c29;
+  border: none;
+  border-radius: 12px;
+  font-family: "Montserrat", sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  text-transform: uppercase;
+  cursor: pointer;
+  margin-top: 15px;
+  box-shadow: 0 4px 15px rgba(255, 215, 0, 0.2);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  transition: all 0.3s;
+  position: relative;
+  z-index: 10;
+}
+
+.main-button:disabled {
+  background: #2c2c2c;
+  color: #555;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+.main-button:not(:disabled):hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px var(--gold-glow);
+}
+
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 3px solid rgba(0, 0, 0, 0.3);
+  border-radius: 50%;
+  border-top-color: #0f0c29;
+  animation: spin 1s ease-in-out infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes pulseGlow {
+  0% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.1);
+  }
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+}
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-5px);
+  }
+  75% {
+    transform: translateX(5px);
+  }
+}
+
+/* Active Subscription State */
+.active-state {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.status-circle {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  border: 2px solid var(--pay-gold);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin: 30px auto;
+  box-shadow:
+    0 0 30px var(--gold-glow),
+    inset 0 0 20px var(--gold-glow);
+  background: rgba(0, 0, 0, 0.3);
+  position: relative;
+}
+.status-circle::after {
+  content: "";
+  position: absolute;
+  top: -10px;
+  left: -10px;
+  right: -10px;
+  bottom: -10px;
+  border-radius: 50%;
+  border: 1px dashed rgba(255, 215, 0, 0.3);
+  animation: spin 10s linear infinite;
+}
+
+.footer-note {
+  text-align: center;
+  font-size: 10px;
+  color: #a0a0a0;
+  opacity: 0.5;
+  margin-top: 10px;
+  margin-bottom: 5px;
+  width: 100%;
 }

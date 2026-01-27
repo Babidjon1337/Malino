@@ -60,6 +60,7 @@ btn_more_info_from_reminder = InlineKeyboardMarkup(
     ]
 )
 
+
 btn_attempts = InlineKeyboardMarkup(
     inline_keyboard=[
         [
@@ -69,34 +70,47 @@ btn_attempts = InlineKeyboardMarkup(
         ],
         [
             InlineKeyboardButton(
-                text="✨ Пробная подписка на сутки за 99 ₽",
-                callback_data="create_subscription_99",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="💎 Безлимит на месяц за 300 ₽",
-                callback_data="create_subscription_300",
+                text="💎 Безлимитный доступ",
+                callback_data="subscription_message_all",
             )
         ],
     ]
 )
-btn_create_subscription_99_or_300 = InlineKeyboardMarkup(
-    inline_keyboard=[
-        [
-            InlineKeyboardButton(
-                text="🔮 Пробная подписка на сутки за 99 ₽",
-                callback_data="create_subscription_99",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="🚀 Безлимит на месяц за 300 ₽",
-                callback_data="create_subscription_300",
-            )
-        ],
-    ]
-)
+
+
+def btn_web_payment(message_id: str, user_id: int, back: bool = False):
+    # Кодируем вопрос для безопасной передачи в URL
+    if back:
+        return InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="💎 Выбрать подписку",
+                        web_app=WebAppInfo(
+                            url=f"{WEB_APP_URL}/payment?message_id={message_id}&user_id={user_id}"
+                        ),
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="⬅️ Назад", callback_data="back_to_subscription"
+                    )
+                ],
+            ]
+        )
+    else:
+        return InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="💎 Выбрать подписку",
+                        web_app=WebAppInfo(
+                            url=f"{WEB_APP_URL}/payment?message_id={message_id}&user_id={user_id}"
+                        ),
+                    )
+                ],
+            ]
+        )
 
 
 def bonus_url(telegram_id: str):
@@ -106,16 +120,28 @@ def bonus_url(telegram_id: str):
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="📤 Отправить другу", url=share_url)],
+            [
+                InlineKeyboardButton(
+                    text="⬅️ Назад", callback_data="back_to_subscription"
+                )
+            ],
         ]
     )
 
 
-def subscription_payment(payment_link: str):
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="💳 Перейти к оплате", url=payment_link)],
-        ]
-    )
+back_to_subscription = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_subscription")],
+    ]
+)
+
+
+# def subscription_payment(payment_link: str):
+#     return InlineKeyboardMarkup(
+#         inline_keyboard=[
+#             [InlineKeyboardButton(text="💳 Перейти к оплате", url=payment_link)],
+#         ]
+#     )
 
 
 btn_management_subscription = InlineKeyboardMarkup(
@@ -132,51 +158,18 @@ btn_management_subscription = InlineKeyboardMarkup(
 
 def webapp_button(message_id: str):
     # Кодируем вопрос для безопасной передачи в URL
-
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
                     text="🔮 Выбрать карты",
-                    web_app=WebAppInfo(url=f"{WEB_APP_URL}?message_id={message_id}"),
+                    web_app=WebAppInfo(
+                        url=f"{WEB_APP_URL}/home?message_id={message_id}"
+                    ),
                 )
             ],
         ],
     )
-
-
-def get_dis_keyboard(
-    agreed_to_offer: bool, agreed_to_public_offer: bool
-) -> InlineKeyboardMarkup:
-    """
-    Создает клавиатуру для команды /dis с кнопками "согласие с офертой" и "согласие публичная офрта".
-    Отображает галочки, если пользователь согласился.
-
-    :param agreed_to_offer: True, если пользователь согласился с офертой.
-    :param agreed_to_public_offer: True, если пользователь согласился с публичной офертой.
-    :return: InlineKeyboardMarkup.
-    """
-    keyboard = []
-
-    # Кнопка "согласие с офертой"
-    offer_text = f"{'✅ ' if agreed_to_offer else ''}согласие с офертой"
-    keyboard.append(
-        [InlineKeyboardButton(text=offer_text, callback_data="agree_offer")]
-    )
-
-    # Кнопка "согласие публичная офрта"
-    public_offer_text = (
-        f"{'✅ ' if agreed_to_public_offer else ''}согласие с публичной оферта"
-    )
-    keyboard.append(
-        [
-            InlineKeyboardButton(
-                text=public_offer_text, callback_data="agree_public_offer"
-            )
-        ]
-    )
-
-    return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
 # ----------------------- Admin -------------------------
@@ -213,16 +206,6 @@ btn_need_button_simple = InlineKeyboardMarkup(
             InlineKeyboardButton(text="❌ Без кнопки", callback_data="btn_no"),
         ],
         [InlineKeyboardButton(text="◀️ Назад", callback_data="back_admin")],
-    ]
-)
-
-btn_buy_subscription = InlineKeyboardMarkup(
-    inline_keyboard=[
-        [
-            InlineKeyboardButton(
-                text="Купить подписку ✨", callback_data="subscription_message_all"
-            )
-        ]
     ]
 )
 

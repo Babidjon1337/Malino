@@ -22,6 +22,7 @@ from config import (
 )
 
 from app.services.async_task import TaskScheduler
+from app.services.yookassa_service import yookassa_service
 from app.handlers import router, webapp_tarot
 from app.admin_handler import admin_router
 import app.database.requests as rq
@@ -155,6 +156,86 @@ async def mini_app_data(request: Request) -> JSONResponse:
         return {"status": "error", "message": str(e)}
 
 
+@app.get("/api/check-subscription")
+async def check_subscription(request: Request):
+    """
+    Проверка статуса подписки пользователя.
+    Принимает GET параметр ?user_id=123
+    """
+    # Безопасное получение параметра (вернет None, если ключа нет)
+    user_id_str = request.query_params.get("user_id")
+
+    if not user_id_str:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Missing user_id parameter"},
+        )
+
+    try:
+        user_id = int(user_id_str)
+
+        # Вызов вашей функции проверки (предполагаем, она возвращает dict)
+        subscription_data = await rq.check_user_subscription(user_id)
+
+        # Если функция вернула None (пользователя/подписки нет)
+        if subscription_data is None:
+            return JSONResponse(
+                status_code=200,
+                content={"is_active": False, "days_left": 0},
+            )
+
+        return JSONResponse(
+            status_code=200,
+            content=subscription_data,
+        )
+
+    except ValueError:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "user_id must be an integer"},
+        )
+    except Exception as e:
+        # Логируем ошибку для себя
+        print(f"Error checking subscription: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Internal server error"},
+        )
+
+
+@app.post("/api/create-payment")
+async def payment_page(request: Request):
+    """
+    Получение ссылки для страницы оплаты от YooKassa
+    """
+
+    # Получаем тело запроса и подпись для проверки
+    request_body = await request.body()
+
+    # Парсим JSON данные из тела запроса
+    data = json.loads(request_body.decode("utf-8"))
+
+    user_id = data.get("user_id")
+    message_id = data.get("message_id")
+    email = data.get("email", None)
+    amount = data.get("amount")
+    if not all([user_id, message_id, amount]):
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Missing required parameters"},
+        )
+    # Создаем ссылку на оплату
+    payment = await yookassa_service.create_payment_link(
+        user_id=user_id,
+        message_id=message_id,
+        amount=amount,
+        email=email,
+    )
+    payment_link = payment.confirmation.confirmation_url
+
+    return JSONResponse(status_code=200, content={"payment_url": payment_link})
+
+
 @app.post("/webhook/yookassa")
 async def yookassa_webhook(request: Request):
     """
@@ -244,6 +325,10 @@ async def yookassa_webhook(request: Request):
 
                 logger.info(
                     f"Успешный платеж {payment_id} для пользователя {telegram_id} обработан, подписка создана"
+                )
+                await bot.send_message(
+                    chat_id=1186592191,
+                    text=f"✨ <b>Приобретена подписка</b>\n\n" f"{amount} рублей",
                 )
 
             else:

@@ -4,6 +4,7 @@ env/
 .venv/
 ENV/
 node_modules/
+dist/
 
 # Environment variables
 .env

@@ -17,16 +17,11 @@ class YooKassaService:
     def __init__(self):
         """
         Инициализация с учетными данными ЮKassa.
-
-        Args:
-            account_id: ID магазина в ЮKassa
-            secret_key: Секретный ключ
         """
         Configuration.account_id = YOOKASSA_SHOP_ID
         Configuration.secret_key = YOOKASSA_SECRET_KEY
         logger.info("PaymentProcessor инициализирован")
 
-    # Изменино
     async def create_payment_link(
         self,
         user_id: int,
@@ -36,20 +31,12 @@ class YooKassaService:
     ):
         """
         Создает платеж с сохранением способа оплаты для будущих автосписаний.
-
-        Args:
-            user_id: ID пользователя
-            message_id: ID сообщения для возврата после оплаты
-
-
-        Returns:
-            dict: Данные платежа с confirmation_url
+        Email передается в receipt для отправки чека и предзаполнения формы.
         """
         try:
-
             payment_data = {
                 "amount": {
-                    "value": amount,  # ЗАМЕНИТЬ
+                    "value": amount,
                     "currency": "RUB",
                 },
                 "payment_method_data": {
@@ -61,7 +48,7 @@ class YooKassaService:
                 },
                 "capture": True,
                 "description": "🔮 Подписка на безлимит Malina",
-                "save_payment_method": True,  # Сохраняем способ оплаты
+                "save_payment_method": True,
                 "metadata": {
                     "user_id": user_id,
                     "message_id": message_id,

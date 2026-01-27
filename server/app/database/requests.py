@@ -191,6 +191,28 @@ async def check_subscription(telegram_id: int) -> dict:
             return False
 
 
+async def check_user_subscription(telegram_id: int) -> Subscription | None:
+    async with async_session() as session:
+        subscription = await session.scalar(
+            select(Subscription).where(Subscription.telegram_id == telegram_id)
+        )
+        if subscription and subscription.end_date > datetime.now():
+
+            # Считаем разницу времени
+            remaining_time = subscription.end_date - datetime.now()
+            days_left = remaining_time.days
+
+            # Если осталось меньше дня, но время еще есть, считаем как 1 день (или 0, на твое усмотрение)
+            # Здесь логика: если есть подписка, то возвращаем True
+            return {
+                "is_active": True,
+                "days_left": max(1, days_left),  # Защита от отрицательных чисел
+            }
+
+        # Если подписки нет в базе или срок истек
+        return {"is_active": False, "days_left": 0}
+
+
 async def CardDayRese() -> None:
     """Сбрасывает card_day на 1 для всех пользователей."""
     async with async_session() as session:
