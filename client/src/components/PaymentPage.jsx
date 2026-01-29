@@ -28,7 +28,7 @@ const PaymentPage = () => {
   const userId = urlUserId || tgUserId; // Используем любой доступный
 
   // Состояние формы
-  const [selectedAmount, setSelectedAmount] = useState(99);
+  const [selectedAmount, setSelectedAmount] = useState(300);
   const [email, setEmail] = useState("");
   const [isOfferAccepted, setIsOfferAccepted] = useState(false);
   const [isPrivacyAccepted, setIsPrivacyAccepted] = useState(false);
