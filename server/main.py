@@ -1,5 +1,6 @@
 import calendar  # Добавлен импорт
 import logging
+import re
 import traceback
 import asyncio
 import json
@@ -25,6 +26,7 @@ from app.services.async_task import TaskScheduler
 from app.services.yookassa_service import yookassa_service
 from app.handlers import router, webapp_tarot
 from app.admin_handler import admin_router
+from app.database.models import async_main
 import app.database.requests as rq
 import app.keyboards as kb
 
@@ -57,6 +59,8 @@ async def lifespan(app: FastAPI):
             url=webhook_url, secret_token=WEBHOOK_SECRET, drop_pending_updates=True
         )
         logger.info(f"Вебхук установлен: {webhook_url}")
+
+        await async_main()  # Инициализация базы данных
 
         # Получаем информацию о боте
         bot_info = await bot.get_me()
@@ -96,7 +100,7 @@ async def root():
     return {"message": "Bot is running!"}
 
 
-@app.post("/webhook")
+@app.post("/webhook", tags=["Bot 🤖"])
 async def webhook(request: Request):
     # Проверяем секретный токен
     if WEBHOOK_SECRET:
@@ -111,11 +115,12 @@ async def webhook(request: Request):
     return {"status": "ok"}
 
 
-@app.post("/api/mini-app", response_class=JSONResponse)
+@app.post("/api/mini-app", tags=["Taro 🃏"], response_class=JSONResponse)
 async def mini_app_data(request: Request) -> JSONResponse:
     """Endpoint для приема данных от Telegram Mini App"""
     try:
         print("=== Получен запрос от Mini App ===")
+        await rq.update_statistic("requests_tarot")
 
         data: Request = await request.json()
         # Извлекаем информацию о пользователе:
@@ -156,7 +161,7 @@ async def mini_app_data(request: Request) -> JSONResponse:
         return {"status": "error", "message": str(e)}
 
 
-@app.get("/api/check-subscription")
+@app.get("/api/check-subscription", tags=["Payment 💸"])
 async def check_subscription(request: Request):
     """
     Проверка статуса подписки пользователя.
@@ -178,12 +183,14 @@ async def check_subscription(request: Request):
         subscription_data = await rq.check_user_subscription(user_id)
 
         # Если функция вернула None (пользователя/подписки нет)
+
         if subscription_data is None:
             return JSONResponse(
                 status_code=200,
                 content={"is_active": False, "days_left": 0},
             )
 
+        await rq.update_statistic("checkout_initiated")
         return JSONResponse(
             status_code=200,
             content=subscription_data,
@@ -203,7 +210,7 @@ async def check_subscription(request: Request):
         )
 
 
-@app.post("/api/create-payment")
+@app.post("/api/create-payment", tags=["Payment 💸"])
 async def payment_page(request: Request):
     """
     Получение ссылки для страницы оплаты от YooKassa
@@ -236,7 +243,101 @@ async def payment_page(request: Request):
     return JSONResponse(status_code=200, content={"payment_url": payment_link})
 
 
-@app.post("/webhook/yookassa")
+@app.get("/api/statistics", tags=["Admin 📊"])
+async def get_statistics_endpoint():
+    """
+    API эндпоинт для Админ-панели.
+    Преобразует данные из БД в формат для React-графиков.
+    """
+    try:
+        stats_list, subs_list = await rq.get_statistics_data()
+
+        history_users = [stat.total_users for stat in stats_list]
+
+        history_checkout = [stat.checkout_initiated for stat in stats_list]
+        history_purchased = [stat.purchased_subs for stat in stats_list]
+
+        history_resp_sonnic = [stat.requests_sonnic for stat in stats_list]
+        history_resp_tarot = [stat.requests_tarot for stat in stats_list]
+        history_resp_map = [stat.requests_map_day for stat in stats_list]
+
+        history_resps = [
+            (stat.requests_sonnic + stat.requests_tarot + stat.requests_map_day)
+            for stat in stats_list
+        ]
+
+        subscriptions_json = []
+        all_subs = len(subs_list)
+        for sub in subs_list:
+            if "subscription" in str(sub.tariff):
+                start_str = (
+                    sub.start_date.strftime("%d.%m.%Y %H:%M") if sub.start_date else "-"
+                )
+                end_str = (
+                    sub.end_date.strftime("%d.%m.%Y %H:%M") if sub.end_date else "-"
+                )
+                amount = str(sub.tariff).replace("subscription(", "").replace(")", "")
+
+                subscriptions_json.append(
+                    {
+                        "recurrent": sub.is_recurring,
+                        "price": f"{amount} ₽",
+                        "start": start_str,
+                        "end": end_str,
+                        "attempts": sub.payment_attempts,
+                    }
+                )
+
+        response_data = {
+            #   // --- БЛОК 1: ПОЛЬЗОВАТЕЛИ ---
+            "users": {
+                "total": history_users[-1] if history_users else 0,
+                "history": history_users,
+            },
+            #   // --- БЛОК 2: ПОДПИСКИ (КРАТКО) ---
+            "active_subs": {"total": all_subs},
+            #   // --- БЛОК 3: ВОРОНКА ПРОДАЖ (НАЧАЛО) ---
+            "checkout_initiated": {
+                "total": history_checkout[-1] if history_checkout else 0,
+                "history": history_checkout,
+            },
+            #   // --- БЛОК 4: ВОРОНКА ПРОДАЖ (УСПЕХ) ---
+            "purchased": {
+                "total": history_purchased[-1] if history_purchased else 0,
+                "history": history_purchased,
+            },
+            #   // --- БЛОК 5: АКТИВНОСТЬ (ЗАПРОСЫ) ---
+            "requests": {
+                "total": history_resps[-1] if history_resps else 0,
+                "history": history_resps,
+                "breakdown": [
+                    {
+                        "id": 1,
+                        "total": history_resp_sonnic[-1] if history_resp_sonnic else 0,
+                        "history": history_resp_sonnic,
+                    },
+                    {
+                        "id": 2,
+                        "total": history_resp_map[-1] if history_resp_map else 0,
+                        "history": history_resp_map,
+                    },
+                    {
+                        "id": 3,
+                        "total": history_resp_tarot[-1] if history_resp_tarot else 0,
+                        "history": history_resp_tarot,
+                    },
+                ],
+            },
+            #   // --- БЛОК 6: ПОДПИСКИ (ПОДРОБНО) ---
+            "subscriptions": subscriptions_json,
+        }
+        return JSONResponse(status_code=200, content=response_data)
+    except Exception as e:
+        logger.error(f"Ошибка при формировании статистики: {e}")
+        return JSONResponse(status_code=500, content={"error": "Internal server error"})
+
+
+@app.post("/webhook/yookassa", tags=["Payment 💸"])
 async def yookassa_webhook(request: Request):
     """
     Обработчик webhook уведомлений от YooKassa.

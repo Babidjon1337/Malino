@@ -7,7 +7,7 @@ from sqlalchemy import select, update, delete, and_, or_, func
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 
-from app.database.models import User, Subscription, GiftCode, async_session
+from app.database.models import User, Subscription, GiftCode, Statistics, async_session
 
 
 logger = logging.getLogger(__name__)
@@ -272,6 +272,7 @@ async def create_subscription(
                 )
             )
         else:
+            await update_statistic("purchased_subs")
             # Создаем новую подписку
             session.add(
                 Subscription(
@@ -499,3 +500,88 @@ async def del_promo_code() -> None:
             delete(GiftCode).where(GiftCode.valid_before <= datetime.now())
         )
         await session.commit()
+
+
+# ================== Статистика =======================
+async def add_statistics() -> None:
+    """Добавляет запись статистики за текущий день."""
+    async with async_session() as session:
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+
+        session.add(Statistics(date=today))
+        await session.commit()
+
+
+async def update_statistic(value: str) -> None:
+    """Увеличивает счетчик checkout_initiated на 1 за текущий день."""
+    async with async_session() as session:
+        data_time = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        stats = await session.scalar(
+            select(Statistics).where(Statistics.date == data_time)
+        )
+
+        if not stats:
+            # Если статистика за сегодня отсутствует, создаем новую запись
+            await add_statistics()
+
+        column_obj = getattr(Statistics, value)
+
+        await session.execute(
+            update(Statistics)
+            .where(Statistics.date == data_time)
+            .values({value: column_obj + 1})  # Словарь: {"имя_колонки": выражение + 1}
+        )
+
+        await session.commit()
+
+
+async def get_statistics_data():
+    """
+    Получает сырые данные из БД:
+    1. Статистику за последние 7 дней.
+    2. Все подписки (или последние N, если их много).
+    """
+    async with async_session() as session:
+        data_time = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        stats = await session.scalar(
+            select(Statistics).where(Statistics.date == data_time)
+        )
+
+        if not stats:
+            # Если статистика за сегодня отсутствует, создаем новую запись
+            await add_statistics()
+
+        # Берем данные за 7 дней
+        seven_days_ago = datetime.now() - timedelta(days=7)
+
+        user_count_result = await session.execute(select(func.count(User.telegram_id)))
+        count_user = user_count_result.scalar()
+
+        subscription_count_result = await session.execute(
+            select(func.count(User.telegram_id)).where(User.tariff == "subscription")
+        )
+        count_subscription = subscription_count_result.scalar()
+
+        await session.execute(
+            update(Statistics)
+            .where(Statistics.date == data_time)
+            .values(
+                total_users=count_user,
+                active_subs=count_subscription,
+            )
+        )
+        await session.commit()
+
+        # Запрос статистики (сортируем по дате, чтобы график был правильным)
+        stats_result = await session.execute(
+            select(Statistics)
+            .where(Statistics.date >= seven_days_ago)
+            .order_by(Statistics.date.asc())
+        )
+        stats = stats_result.scalars().all()
+
+        # Запрос подписок (можно добавить лимит .limit(50))
+        sub_result = await session.execute(select(Subscription))
+        subs = sub_result.scalars().all()
+
+        return stats, subs

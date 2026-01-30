@@ -87,9 +87,10 @@ async def clear_tarot_keyboard_by_state(state: FSMContext, bot: Bot, user_id: in
             )
             await state.clear()
         except Exception as e:
-            logger.warning(
-                f"Не удалось убрать клавиатуру у сообщения {tarot_msg_id}: {e}"
-            )
+            ...
+            # logger.warning(
+            #     f"Не удалось убрать клавиатуру у сообщения {tarot_msg_id}: {e}"
+            # )
 
 
 @router.message(CommandStart())
@@ -182,6 +183,7 @@ async def message_sleep(message: Message, state: FSMContext):
         text=data.get("text"),
         prompt="sleep",
     )
+    await rq.update_statistic("requests_sonnic")
 
     logger.info(f"🌙 Сон пользователя: {data.get('text')}")
     await msg.delete()
@@ -426,6 +428,7 @@ async def callback_card_day(callback: CallbackQuery, state: FSMContext):
         msg = await callback.message.answer(
             "Соединяюсь с космической энергией...\n🌌 Раскрываю тайны Вселенной для вашей карты дня"
         )
+        await rq.update_statistic("requests_map_day")
 
         selected_card = random.choice(tarot_deck)
         file_id = file_id_cards[selected_card]

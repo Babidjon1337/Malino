@@ -61,6 +61,22 @@ class GiftCode(Base):
     valid_before = mapped_column(DateTime)
 
 
+class Statistics(Base):
+    __tablename__ = "statistics"
+
+    id = mapped_column(Integer, primary_key=True)
+    date = mapped_column(DateTime, default=func.datetime("now", "localtime"))
+    total_users = mapped_column(Integer, default=0)
+    active_subs = mapped_column(Integer, default=0)
+    # Сколько раз пользователи переходили на экран оплаты или нажимали "Купить"
+    checkout_initiated = mapped_column(Integer, default=0)
+    # Сколько раз пользователи успешно покупали подписку
+    purchased_subs = mapped_column(Integer, default=0)
+    requests_sonnic = mapped_column(Integer, default=0)
+    requests_tarot = mapped_column(Integer, default=0)
+    requests_map_day = mapped_column(Integer, default=0)
+
+
 async def async_main():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

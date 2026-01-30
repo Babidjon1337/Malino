@@ -179,6 +179,12 @@ admin_keyboard = InlineKeyboardMarkup(
     inline_keyboard=[
         [
             InlineKeyboardButton(
+                text="Вся статистика 📊",
+                web_app=WebAppInfo(url=f"{WEB_APP_URL}/admin"),
+            ),
+        ],
+        [
+            InlineKeyboardButton(
                 text="Рассылка 📩",
                 callback_data="admin_message_all_users",
             ),
