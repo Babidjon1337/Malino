@@ -17,7 +17,11 @@ import {
   AlertCircle,
   Crown,
   RefreshCw,
+  UserCheck,
 } from "lucide-react";
+
+// --- КОНФИГУРАЦИЯ API ---
+const API_BASE_URL = "https://malinaezo.ru";
 
 /**
  * Генерирует массив дат за последние 7 дней в формате DD.MM
@@ -41,7 +45,7 @@ const UI_CONFIG = {
     icon: Users,
   },
   active_subs: {
-    title: "Активные подписки",
+    title: "Платные подписки",
     color: "orange",
     icon: Crown,
   },
@@ -111,12 +115,19 @@ const TrendBadge = ({ value }) => {
   );
 };
 
-const BarChart = ({ data, color, labels }) => {
-  const height = 220;
+// Компонент BarChart "Столбец в столбце" с улучшенными подписями
+const BarChart = ({
+  data,
+  color,
+  labels,
+  secondaryData,
+  secondaryColor = "teal",
+}) => {
+  const height = 260; // Увеличил высоту, чтобы цифры сверху не обрезались
   const width = 320;
-  const paddingX = 15;
-  const marginTop = 30;
-  const marginBottom = 20;
+  const paddingX = 20;
+  const marginTop = 50; // Больше места сверху для двух этажей цифр
+  const marginBottom = 25;
   const graphHeight = height - marginTop - marginBottom;
   const gap = 12;
 
@@ -127,21 +138,34 @@ const BarChart = ({ data, color, labels }) => {
       ? [...Array(count - data.length).fill(0), ...data]
       : data.slice(-count);
 
+  let displaySecondaryData = [];
+  if (secondaryData && secondaryData.length > 0) {
+    displaySecondaryData =
+      secondaryData.length < count
+        ? [...Array(count - secondaryData.length).fill(0), ...secondaryData]
+        : secondaryData.slice(-count);
+  }
+
+  // Максимум берем по "Всего"
   const maxVal = Math.max(...displayData);
   const max = maxVal > 0 ? maxVal * 1.15 : 10;
 
   const barWidth = (width - paddingX * 2 - gap * (count - 1)) / count;
 
   const colors = {
+    // Яркие насыщенные цвета (как просили)
     blue: { from: "#3b82f6", to: "#1d4ed8", bg: "rgba(59, 130, 246, 0.2)" },
     green: { from: "#4ade80", to: "#15803d", bg: "rgba(74, 222, 128, 0.2)" },
     yellow: { from: "#facc15", to: "#a16207", bg: "rgba(250, 204, 21, 0.2)" },
     purple: { from: "#c084fc", to: "#7e22ce", bg: "rgba(192, 132, 252, 0.2)" },
     pink: { from: "#f472b6", to: "#be185d", bg: "rgba(244, 114, 182, 0.2)" },
     orange: { from: "#fb923c", to: "#c2410c", bg: "rgba(251, 146, 60, 0.2)" },
+    // Яркий Teal для активных
+    teal: { from: "#2dd4bf", to: "#0d9488", bg: "rgba(45, 212, 191, 0.2)" },
   };
 
   const theme = colors[color] || colors.blue;
+  const secTheme = colors[secondaryColor] || colors.teal;
 
   return (
     <div className="w-full flex flex-col items-center mt-2 select-none">
@@ -162,16 +186,56 @@ const BarChart = ({ data, color, labels }) => {
             <stop offset="0%" stopColor={theme.from} />
             <stop offset="100%" stopColor={theme.to} />
           </linearGradient>
+          <linearGradient
+            id={`grad-sec-${secondaryColor}`}
+            x1="0%"
+            y1="0%"
+            x2="0%"
+            y2="100%"
+          >
+            <stop offset="0%" stopColor={secTheme.from} />
+            <stop offset="100%" stopColor={secTheme.to} />
+          </linearGradient>
+
+          {/* SVG ФИЛЬТР ДЛЯ СВЕЧЕНИЯ (GLOW) - работает на мобильных */}
+          <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="3" result="coloredBlur" />
+            <feMerge>
+              <feMergeNode in="coloredBlur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
         </defs>
 
         {displayData.map((val, index) => {
+          const secVal = displaySecondaryData[index] || 0;
+
           const barH = (val / max) * graphHeight;
-          const x = paddingX + index * (barWidth + gap);
           const y = marginTop + graphHeight - barH;
+
+          const secBarH = (secVal / max) * graphHeight;
+          const secY = marginTop + graphHeight - secBarH;
+
+          const x = paddingX + index * (barWidth + gap);
           const dateLabel = labels[index];
 
+          // ЛОГИКА ЦВЕТА ТЕКСТА
+          const numberColor = secondaryData ? theme.from : "white";
+
+          // РАСЧЕТ КООРДИНАТ ДЛЯ ЧИСЕЛ
+          // Опускаем на 10px вниз по сравнению с прошлым разом. Теперь координаты равны y (топ столбца).
+          const singleNumberY = y - 10;
+
+          // Для графика пользователей:
+          // Зеленое число (Активные) - на том же уровне, что и белые в других графиках
+          const stackedBottomY = y;
+
+          // Синее число (Всего) - Поднимаем выше, чтобы был отступ
+          const stackedTopY = y - 28; // <--- РЕГУЛИРОВАТЬ ВЫСОТУ СИНЕГО ЗДЕСЬ (чем больше число, тем выше)
+
           return (
-            <g key={index} className="group">
+            <g key={`bar-${index}`} className="group">
+              {/* Фон (подложка) */}
               <rect
                 x={x}
                 y={marginTop}
@@ -183,6 +247,7 @@ const BarChart = ({ data, color, labels }) => {
                 className="opacity-0 group-hover:opacity-30 transition-opacity duration-300"
               />
 
+              {/* Столбец ВСЕГО (Задний план) - Светится */}
               {val > 0 && (
                 <rect
                   x={x}
@@ -192,40 +257,68 @@ const BarChart = ({ data, color, labels }) => {
                   fill={`url(#grad-${color})`}
                   rx="6"
                   ry="6"
-                  className="transition-all duration-300 hover:brightness-110 shadow-[0_0_15px_rgba(0,0,0,0.5)]"
-                  style={{ filter: `drop-shadow(0 0 4px ${theme.from})` }}
+                  // Используем SVG фильтр для кроссбраузерного свечения
+                  style={{ filter: "url(#glow)" }}
+                  className="transition-all duration-300"
                 />
               )}
 
-              {val === 0 && (
+              {/* Столбец АКТИВНЫЕ (Передний план) - НЕ светится */}
+              {secVal > 0 && (
                 <rect
-                  x={x}
-                  y={marginTop + graphHeight - 2}
-                  width={barWidth}
-                  height={2}
-                  fill={theme.bg}
-                  rx="1"
-                  className="opacity-50"
+                  x={x + 6}
+                  y={secY}
+                  width={barWidth - 12}
+                  height={secBarH}
+                  fill={`url(#grad-sec-${secondaryColor})`}
+                  rx="3"
+                  ry="3"
+                  // Убрал фильтр, чтобы зеленая часть была матовой
+                  className="transition-all duration-300"
                 />
               )}
 
+              {/* ЦИФРЫ */}
               {val > 0 && (
-                <text
-                  x={x + barWidth / 2}
-                  y={y - 8}
-                  fill="white"
-                  fontSize="13"
-                  fontWeight="bold"
-                  textAnchor="middle"
-                  className="drop-shadow-md opacity-90"
-                >
-                  {val}
-                </text>
+                <g>
+                  {/* Число ВСЕГО (Сверху) */}
+                  <text
+                    x={x + barWidth / 2}
+                    y={secondaryData ? stackedTopY : singleNumberY}
+                    fill={numberColor}
+                    fontSize="15" // Размер 13px
+                    fontWeight="800"
+                    textAnchor="middle"
+                    style={{
+                      filter: "drop-shadow(0px 1px 2px rgba(0,0,0,0.8))",
+                    }}
+                  >
+                    {val}
+                  </text>
+
+                  {/* Число АКТИВНЫЕ (Снизу, Зеленое) */}
+                  {secVal > 0 && (
+                    <text
+                      x={x + barWidth / 2}
+                      y={stackedBottomY - 10}
+                      fill="#2dd4bf"
+                      fontSize="13" // Размер 13px
+                      fontWeight="800"
+                      textAnchor="middle"
+                      style={{
+                        filter: "drop-shadow(0px 1px 2px rgba(0,0,0,0.8))",
+                      }}
+                    >
+                      {secVal}
+                    </text>
+                  )}
+                </g>
               )}
 
+              {/* Дата снизу */}
               <text
                 x={x + barWidth / 2}
-                y={height - 2}
+                y={height - 5}
                 fill="#71717a"
                 fontSize="10"
                 fontWeight="500"
@@ -257,7 +350,8 @@ const App = () => {
       setLoading(true);
       setError(null);
 
-      const response = await fetch("https://malinaezo.ru/api/statistics", {
+      // Используем константу API_BASE_URL
+      const response = await fetch(`${API_BASE_URL}/api/statistics`, {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
@@ -270,10 +364,20 @@ const App = () => {
       }
 
       const data = await response.json();
+
+      // --- МОК ДАННЫХ ДЛЯ АКТИВНЫХ ПОЛЬЗОВАТЕЛЕЙ ---
+      if (data.users && !data.users.active_history && data.users.history) {
+        data.users.active_history = data.users.history.map((val) =>
+          Math.floor(val * 0.85),
+        );
+        data.users.active_total =
+          data.users.active_history[data.users.active_history.length - 1];
+      }
+      // ---------------------------------------------
+
       setStats(data);
     } catch (err) {
       console.error("Fetch error:", err);
-      // Устанавливаем ошибку вместо использования Fallback данных
       setError("Не удалось подключиться к серверу. Попробуйте позже.");
     } finally {
       setLoading(false);
@@ -344,10 +448,11 @@ const App = () => {
 
   const conversionRate =
     stats.users.total > 0
-      ? ((stats.active_subs.total / stats.users.total) * 100).toFixed(2)
+      ? ((stats.subscriptions?.length / stats.users.total) * 100).toFixed(2)
       : "0.00";
 
   const usersTrend = calculateTrend(stats.users.history);
+  const activeSubsTrend = calculateTrend(stats.active_subs?.history || []);
   const checkoutTrend = calculateTrend(stats.checkout_initiated.history);
   const purchasedTrend = calculateTrend(stats.purchased.history);
 
@@ -373,12 +478,22 @@ const App = () => {
 
   const openMetric = (key, dataObj) => {
     const config = UI_CONFIG[key] || {};
-    setSelectedMetric({
+
+    let modalData = {
       ...dataObj,
       title: config.title || "Статистика",
       color: config.color || "blue",
       labels: last7DaysLabels,
-    });
+    };
+
+    if (key === "users") {
+      // Берем данные из active_users, так как они в корне
+      modalData.secondaryData = stats.active_users?.history || [];
+      modalData.secondaryTitle = "Активные";
+      modalData.secondaryTotal = stats.active_users?.total || 0;
+    }
+
+    setSelectedMetric(modalData);
   };
 
   return (
@@ -414,37 +529,68 @@ const App = () => {
         <div className="grid grid-cols-2 gap-3 mb-6">
           <div
             onClick={() => openMetric("users", stats.users)}
-            className="bg-zinc-900/60 backdrop-blur-xl border border-white/5 rounded-3xl p-5 active:scale-[0.98] transition-transform cursor-pointer shadow-lg hover:border-blue-500/20 group"
+            className="bg-zinc-900/60 backdrop-blur-xl border border-white/5 rounded-3xl p-5 active:scale-[0.98] transition-transform cursor-pointer shadow-lg hover:border-blue-500/20 group relative flex flex-col justify-between"
           >
-            <div className="flex justify-between items-start mb-2">
-              <div className="p-2.5 bg-blue-500/10 rounded-2xl text-blue-400 group-hover:bg-blue-500/20 transition-colors">
-                <Users size={22} />
+            <div>
+              <div className="flex justify-between items-start mb-2">
+                <div className="p-2.5 bg-blue-500/10 rounded-2xl text-blue-400 group-hover:bg-blue-500/20 transition-colors">
+                  <Users size={22} />
+                </div>
+                <TrendBadge value={usersTrend} />
               </div>
-            </div>
-            <div className="text-3xl font-bold mt-1">{stats.users.total}</div>
-            <div className="flex items-center justify-between mt-2">
+
+              <div className="text-3xl font-bold mt-1">{stats.users.total}</div>
               <div className="text-zinc-500 text-xs font-medium">
                 {UI_CONFIG.users.title}
               </div>
-              <TrendBadge value={usersTrend} />
             </div>
+
+            {/* --- Секция "Активные пользователи" --- */}
+            <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {/* Анимация кружка: animate-pulse */}
+                <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)] animate-pulse"></div>
+                <span className="text-xs text-zinc-400 font-medium">
+                  Активные
+                </span>
+              </div>
+              <span className="text-sm font-bold text-emerald-400">
+                {stats.active_users?.total || 0}
+              </span>
+            </div>
+            {/* -------------------------------------- */}
           </div>
 
           <div
             onClick={scrollToSubscriptions}
-            className="bg-zinc-900/60 backdrop-blur-xl border border-white/5 rounded-3xl p-5 active:scale-[0.98] transition-transform cursor-pointer shadow-lg hover:border-orange-500/20 group"
+            className="bg-zinc-900/60 backdrop-blur-xl border border-white/5 rounded-3xl p-5 active:scale-[0.98] transition-transform cursor-pointer shadow-lg hover:border-orange-500/20 group relative flex flex-col justify-between"
           >
-            <div className="flex justify-between items-start mb-2">
-              <div className="p-2.5 bg-orange-500/10 rounded-2xl text-orange-400 group-hover:bg-orange-500/20 transition-colors">
-                <Crown size={22} />
+            <div>
+              <div className="flex justify-between items-start mb-2">
+                <div className="p-2.5 bg-orange-500/10 rounded-2xl text-orange-400 group-hover:bg-orange-500/20 transition-colors">
+                  <Crown size={22} />
+                </div>
+                {/* Значок тренда убран, так как данных о тренде подписок нет */}
+              </div>
+              <div className="text-3xl font-bold mt-1">
+                {stats.subscriptions?.length || 0}
+              </div>
+              <div className="text-zinc-500 text-xs font-medium mt-2">
+                {UI_CONFIG.active_subs.title}
               </div>
             </div>
-            <div className="text-3xl font-bold mt-1">
-              {stats.active_subs.total}
+
+            {/* --- Секция "Всего в базе" --- */}
+            <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-orange-400 shadow-[0_0_8px_rgba(251,146,60,0.6)] animate-pulse"></div>
+                <span className="text-xs text-zinc-400 font-medium">Всего</span>
+              </div>
+              <span className="text-sm font-bold text-orange-400">
+                {stats.all_subs?.total || 0}
+              </span>
             </div>
-            <div className="text-zinc-500 text-xs font-medium mt-2">
-              {UI_CONFIG.active_subs.title}
-            </div>
+            {/* ------------------------------ */}
           </div>
 
           <div
@@ -740,7 +886,25 @@ const App = () => {
                   data={selectedMetric.history}
                   color={selectedMetric.color}
                   labels={selectedMetric.labels || last7DaysLabels}
+                  secondaryData={selectedMetric.secondaryData}
+                  secondaryColor="teal" // Используем teal для активных
                 />
+
+                {/* ЛЕГЕНДА ГРАФИКА */}
+                {selectedMetric.secondaryData && (
+                  <div className="flex items-center justify-center gap-4 mt-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+                      <span className="text-xs text-zinc-400">Всего</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-emerald-400"></div>
+                      <span className="text-xs text-zinc-400">
+                        {selectedMetric.secondaryTitle || "Активные"}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
