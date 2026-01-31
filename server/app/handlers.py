@@ -99,7 +99,6 @@ async def start_command(message: Message, command: CommandObject, state: FSMCont
     await state.clear()
     await rq.add_user(message.from_user.id, message.from_user.username, command.args)
     await message.answer(start_text, reply_markup=kb.menu_start)
-    await rq.update_statistic("active_users", 100)
 
 
 @router.callback_query(F.data == "back_to_start")
