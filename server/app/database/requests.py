@@ -507,12 +507,20 @@ async def add_statistics() -> None:
     """Добавляет запись статистики за текущий день."""
     async with async_session() as session:
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        existing = await session.scalar(
+            select(Statistics).where(Statistics.date == today - timedelta(days=1))
+        )
 
-        session.add(Statistics(date=today))
+        session.add(
+            Statistics(
+                date=today,
+                active_users=existing.active_users if existing else 0,
+            )
+        )
         await session.commit()
 
 
-async def update_statistic(value: str) -> None:
+async def update_statistic(value: str, count: int = None) -> None:
     """Увеличивает счетчик checkout_initiated на 1 за текущий день."""
     async with async_session() as session:
         data_time = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -529,7 +537,9 @@ async def update_statistic(value: str) -> None:
         await session.execute(
             update(Statistics)
             .where(Statistics.date == data_time)
-            .values({value: column_obj + 1})  # Словарь: {"имя_колонки": выражение + 1}
+            .values(
+                {value: column_obj + 1 if count is None else count}
+            )  # Словарь: {"имя_колонки": выражение + 1 или count}
         )
 
         await session.commit()
@@ -567,7 +577,7 @@ async def get_statistics_data():
             .where(Statistics.date == data_time)
             .values(
                 total_users=count_user,
-                active_subs=count_subscription,
+                all_subs=count_subscription,
             )
         )
         await session.commit()

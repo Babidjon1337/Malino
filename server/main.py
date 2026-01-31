@@ -253,6 +253,7 @@ async def get_statistics_endpoint():
         stats_list, subs_list = await rq.get_statistics_data()
 
         history_users = [stat.total_users for stat in stats_list]
+        history_active_users = [stat.active_users for stat in stats_list]
 
         history_checkout = [stat.checkout_initiated for stat in stats_list]
         history_purchased = [stat.purchased_subs for stat in stats_list]
@@ -295,18 +296,23 @@ async def get_statistics_endpoint():
                 "history": history_users,
             },
             #   // --- БЛОК 2: ПОДПИСКИ (КРАТКО) ---
-            "active_subs": {"total": all_subs},
-            #   // --- БЛОК 3: ВОРОНКА ПРОДАЖ (НАЧАЛО) ---
+            "active_users": {
+                "total": history_active_users[-1] if history_active_users else 0,
+                "history": history_active_users,
+            },
+            #   // --- БЛОК 3: АКТИВНЫХ ПОЛЬЗОВАТЕЛЕЙ ---
+            "all_subs": {"total": all_subs},
+            #   // --- БЛОК 4: ВОРОНКА ПРОДАЖ (НАЧАЛО) ---
             "checkout_initiated": {
                 "total": history_checkout[-1] if history_checkout else 0,
                 "history": history_checkout,
             },
-            #   // --- БЛОК 4: ВОРОНКА ПРОДАЖ (УСПЕХ) ---
+            #   // --- БЛОК 5: ВОРОНКА ПРОДАЖ (УСПЕХ) ---
             "purchased": {
                 "total": history_purchased[-1] if history_purchased else 0,
                 "history": history_purchased,
             },
-            #   // --- БЛОК 5: АКТИВНОСТЬ (ЗАПРОСЫ) ---
+            #   // --- БЛОК 6: АКТИВНОСТЬ (ЗАПРОСЫ) ---
             "requests": {
                 "total": history_resps[-1] if history_resps else 0,
                 "history": history_resps,
@@ -328,7 +334,7 @@ async def get_statistics_endpoint():
                     },
                 ],
             },
-            #   // --- БЛОК 6: ПОДПИСКИ (ПОДРОБНО) ---
+            #   // --- БЛОК 7: ПОДПИСКИ (ПОДРОБНО) ---
             "subscriptions": subscriptions_json,
         }
         return JSONResponse(status_code=200, content=response_data)

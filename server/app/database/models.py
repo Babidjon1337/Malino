@@ -67,7 +67,8 @@ class Statistics(Base):
     id = mapped_column(Integer, primary_key=True)
     date = mapped_column(DateTime, default=func.datetime("now", "localtime"))
     total_users = mapped_column(Integer, default=0)
-    active_subs = mapped_column(Integer, default=0)
+    active_users = mapped_column(Integer, default=0)
+    all_subs = mapped_column(Integer, default=0)
     # Сколько раз пользователи переходили на экран оплаты или нажимали "Купить"
     checkout_initiated = mapped_column(Integer, default=0)
     # Сколько раз пользователи успешно покупали подписку
