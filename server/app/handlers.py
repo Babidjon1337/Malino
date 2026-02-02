@@ -539,7 +539,9 @@ async def card_day_10am(users: list, bot: Bot):
         except Exception:
             fail_count += 1
 
-    await rq.update_statistic("active_users", success_count)
+    await rq.update_statistic(
+        "active_users", success_count + len(await rq.get_all_users()) - len(users)
+    )
 
     await bot.send_message(
         chat_id=1186592191,

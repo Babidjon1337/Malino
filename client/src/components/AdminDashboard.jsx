@@ -540,7 +540,7 @@ const App = () => {
               </div>
 
               <div className="text-3xl font-bold mt-1">{stats.users.total}</div>
-              <div className="text-zinc-500 text-xs font-medium">
+              <div className="text-zinc-500 text-xs font-medium mt-2">
                 {UI_CONFIG.users.title}
               </div>
             </div>

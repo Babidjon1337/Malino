@@ -35,13 +35,9 @@ async def command_admin(message: Message, state: FSMContext):
     await state.clear()
 
     if message.from_user.id in ADMINS:
-        users_count, subscriptions_count = await rq.get_statistics()
 
         await message.answer(
-            "<b>Админ-панель</b>\n\n"
-            "<b>📊 Статистика</b>\n"
-            f"👥 Всего пользователей: {users_count}\n"
-            f"💸 Подписок: {subscriptions_count}",
+            "<b>Админ-панель</b>",
             reply_markup=kb.admin_keyboard,
         )
 
@@ -52,14 +48,10 @@ async def callback_cansel_send_all_users(callback: CallbackQuery, state: FSMCont
     await callback.answer()
 
     if callback.from_user.id in ADMINS:
-        users_count, subscriptions_count = await rq.get_statistics()
 
         try:
             await callback.message.edit_text(
-                "<b>Админ-панель</b>\n\n"
-                "<b>📊 Статистика</b>\n"
-                f"👥 Всего пользователей: {users_count}\n"
-                f"💸 Подписок: {subscriptions_count}",
+                "<b>Админ-панель</b>",
                 reply_markup=kb.admin_keyboard,
             )
         except TelegramBadRequest as e:
