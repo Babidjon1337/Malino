@@ -189,10 +189,23 @@ async def message_sleep(message: Message, state: FSMContext):
     await msg.delete()
 
     try:
+        await message.bot.send_message_draft(
+            chat_id=message.from_user.id,
+            draft_id=random.randint(1, 1000000),
+            text=response,
+        )
+
         await message.answer(response)
     except TelegramBadRequest as e:
         if "can't parse entities" in str(e):
             clean_response = re.sub(r"<[^>]+>", "", response)
+
+            await message.bot.send_message_draft(
+                chat_id=message.from_user.id,
+                draft_id=random.randint(1, 1000000),
+                text=clean_response,
+            )
+
             await message.answer(clean_response)
         else:
             await message.answer(
@@ -304,9 +317,19 @@ async def webapp_tarot(
 
         # Редактируем сообщение снова, показывая результат
         try:
-            await bot.edit_message_text(
+            try:
+                await bot.delete_message(chat_id=user_id, message_id=message_id)
+            except:
+                await bot.edit_message_reply_markup(reply_markup=None)
+
+            await bot.send_message_draft(
                 chat_id=user_id,
-                message_id=message_id,
+                draft_id=random.randint(1, 1000000),
+                text=response,
+            )
+
+            await bot.send_message(
+                chat_id=user_id,
                 text=response,
                 parse_mode="HTML",
             )
@@ -315,16 +338,20 @@ async def webapp_tarot(
             if "can't parse entities" in str(e):
                 response = re.sub(r"<[^>]+>", "", response)
 
-                await bot.edit_message_text(
+                await bot.send_message_draft(
                     chat_id=user_id,
-                    message_id=message_id,
+                    draft_id=random.randint(1, 1000000),
+                    text=response,
+                )
+
+                await bot.send_message(
+                    chat_id=user_id,
                     text=response,
                     parse_mode="HTML",
                 )
             else:
-                await bot.edit_message_text(
+                await bot.send_message(
                     chat_id=user_id,
-                    message_id=message_id,
                     text=(
                         "В данный момент эта функция не доступна 😢\n"
                         "Пожалуйста, попробуйте позже."
@@ -447,10 +474,23 @@ async def callback_card_day(callback: CallbackQuery, state: FSMContext):
             await callback.message.answer_photo(photo=file_id, parse_mode="HTML")
 
         try:
+            await callback.bot.send_message_draft(
+                chat_id=callback.from_user.id,
+                draft_id=random.randint(1, 1000000),
+                text=response,
+            )
+
             await callback.message.answer(response)
         except TelegramBadRequest as e:
             if "can't parse entities" in str(e):
                 clean_response = re.sub(r"<[^>]+>", "", response)
+
+                await callback.bot.send_message_draft(
+                    chat_id=callback.from_user.id,
+                    draft_id=random.randint(1, 1000000),
+                    text=clean_response,
+                )
+
                 await callback.message.answer(clean_response)
             else:
                 await callback.message.answer(
