@@ -14,13 +14,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.types import Update
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
-
-from config import (
-    BOT_TOKEN,
-    WEBHOOK_URL,
-    WEBHOOK_SECRET,
-    PORT,
-)
+from aiogram.client.session.aiohttp import AiohttpSession
 
 from app.services.async_task import TaskScheduler
 from app.services.yookassa_service import yookassa_service
@@ -30,12 +24,24 @@ from app.database.models import async_main
 import app.database.requests as rq
 import app.keyboards as kb
 
+from config import (
+    BOT_TOKEN,
+    WEBHOOK_URL,  # Можно будет убрать из конфига позже, он больше не нужен
+    WEBHOOK_SECRET,
+    PORT,
+    PROXY_URL,
+)
+
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
-bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+# Инициализация бота с голландским прокси
+bot = Bot(
+    token=BOT_TOKEN,
+    session=AiohttpSession(proxy=PROXY_URL),
+    default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+)
 dp = Dispatcher()
 
 # Очищаем роутер от предыдущих подключений
@@ -50,34 +56,57 @@ task_scheduler = TaskScheduler(bot)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Управление жизненным циклом приложения"""
+    polling_task = None
+
     # Startup
     try:
         task_scheduler.start()
-        # Устанавливаем webhook
-        webhook_url = f"{WEBHOOK_URL}/webhook"
-        await bot.set_webhook(
-            url=webhook_url, secret_token=WEBHOOK_SECRET, drop_pending_updates=True
-        )
-        logger.info(f"Вебхук установлен: {webhook_url}")
-
         await async_main()  # Инициализация базы данных
+
+        # =================================================================
+        # ВЫБОР РЕЖИМА РАБОТЫ ТЕЛЕГРАМ БОТА (ВЕБХУК ИЛИ ПОЛЛИНГ)
+        # =================================================================
+
+        # --- ВАРИАНТ 1: WEBHOOK (Закомментирован) ---
+        # Раскомментируйте эти строки, чтобы вернуть вебхуки:
+        # webhook_url = f"{WEBHOOK_URL}/webhook"
+        # await bot.set_webhook(
+        #     url=webhook_url, secret_token=WEBHOOK_SECRET, drop_pending_updates=True
+        # )
+        # logger.info(f"Вебхук установлен: {webhook_url}")
+
+        # --- ВАРИАНТ 2: LONG POLLING (Активен сейчас) ---
+        # Закомментируйте эти строки, если переходите обратно на вебхуки:
+        await bot.delete_webhook(drop_pending_updates=True)
+        logger.info("Вебхук Telegram удален. Переходим на Long Polling.")
+        polling_task = asyncio.create_task(dp.start_polling(bot))
+        # -----------------------------------------------------------------
 
         # Получаем информацию о боте
         bot_info = await bot.get_me()
         logger.info(f"Бот запущен: @{bot_info.username}")
 
     except Exception as e:
-        logger.error(f"Ошибка при установке вебхука: {e}")
+        logger.error(f"Ошибка при запуске: {e}")
         raise
 
-    yield
+    yield  # В этот момент FastAPI начинает принимать запросы от ЮKassa и Mini App
 
     # Shutdown
     try:
         task_scheduler.shutdown()
-        await bot.delete_webhook()
+
+        # --- ВАРИАНТ 1: WEBHOOK (Закомментирован) ---
+        # Раскомментировать, если возвращаетесь на вебхуки:
+        # await bot.delete_webhook()
+
+        # --- ВАРИАНТ 2: LONG POLLING (Активен сейчас) ---
+        # Закомментировать, если возвращаетесь на вебхуки:
+        if polling_task:
+            polling_task.cancel()
+
         await bot.session.close()
-        logger.info("Вебхук удален, сессия бота закрыта")
+        logger.info("Сессия бота закрыта")
     except Exception as e:
         logger.error(f"Ошибка при завершении работы: {e}")
 
@@ -97,9 +126,14 @@ app.add_middleware(
 
 @app.get("/")
 async def root():
-    return {"message": "Bot is running!"}
+    return {"message": "Bot API and YooKassa webhook listener are running!"}
 
 
+# =====================================================================
+# РОУТ ДЛЯ TELEGRAM ВЕБХУКА (Возвращен)
+# Если включен Polling, этот роут безопасно простаивает.
+# Если вы переключитесь на Вебхук в lifespan, он снова начнет работать.
+# =====================================================================
 @app.post("/webhook", tags=["Bot 🤖"])
 async def webhook(request: Request):
     # Проверяем секретный токен
@@ -137,7 +171,6 @@ async def mini_app_data(request: Request) -> JSONResponse:
             cards_list = ", ".join([card.get("name", "") for card in cards])
 
             # Запускаем функцию обработки в фоне, не дожидаясь её завершения
-
             asyncio.create_task(
                 webapp_tarot(
                     bot,
@@ -343,6 +376,10 @@ async def get_statistics_endpoint():
         return JSONResponse(status_code=500, content={"error": "Internal server error"})
 
 
+# =====================================================================
+# ВЕБХУК ЮKASSA СОХРАНЕН!
+# FastAPI продолжает слушать этот URL без перебоев
+# =====================================================================
 @app.post("/webhook/yookassa", tags=["Payment 💸"])
 async def yookassa_webhook(request: Request):
     """

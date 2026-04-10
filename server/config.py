@@ -17,6 +17,7 @@ AI_TOKEN = os.getenv("AI_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
 PORT = 8000
+PROXY_URL = os.getenv("PROXY_URL")
 
 # Taro Web
 WEB_APP_URL = os.getenv("WEB_APP_URL")
