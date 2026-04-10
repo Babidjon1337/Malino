@@ -2,8 +2,9 @@ import re
 import logging
 from openai import *
 import asyncio
+import httpx
 
-from config import AI_TOKEN
+from config import AI_TOKEN, PROXY_URL
 from app.others.text_message import prompt_data
 
 
@@ -13,9 +14,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-client = AsyncClient(
+client = AsyncOpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=AI_TOKEN,
+    http_client=httpx.AsyncClient(proxy=PROXY_URL),
 )
 
 
