@@ -23,7 +23,8 @@ class MessageAllUsersState(StatesGroup):
 
 
 class NewPromoCode(StatesGroup):
-    day = State()
+    day = State()  # Шаг 1: Дни подписки
+    validity = State()  # Шаг 2: Срок жизни промокода
 
 
 @admin_router.message(Command("admin"))
@@ -385,11 +386,10 @@ async def callback_promo_codes(callback: CallbackQuery):
 async def callback_new_promo_code(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
-    # По умолчанию код одноразовый
     await state.update_data(is_multi=False)
 
     send_message = await callback.message.edit_text(
-        "Укажите срок действия промокода в днях <i>(Укажите только число)</i>\n\n"
+        "🎁 Укажите количество <b>дней подписки</b>, которые даст промокод <i>(только число)</i>:\n\n"
         "📌 <b>Текущий тип:</b> Одноразовый 👤",
         reply_markup=kb.btn_promo_type(is_multi=False),
     )
@@ -399,7 +399,6 @@ async def callback_new_promo_code(callback: CallbackQuery, state: FSMContext):
 
 @admin_router.callback_query(NewPromoCode.day, F.data == "toggle_promo_type")
 async def toggle_promo_type(callback: CallbackQuery, state: FSMContext):
-    """Обработчик кнопки переключения типа промокода"""
     data = await state.get_data()
     is_multi = not data.get("is_multi", False)
     await state.update_data(is_multi=is_multi)
@@ -407,7 +406,7 @@ async def toggle_promo_type(callback: CallbackQuery, state: FSMContext):
     text_type = "Многоразовый ♾" if is_multi else "Одноразовый 👤"
 
     await callback.message.edit_text(
-        "Укажите срок действия промокода в днях <i>(Укажите только число)</i>\n\n"
+        "🎁 Укажите количество <b>дней подписки</b>, которые даст промокод <i>(только число)</i>:\n\n"
         f"📌 <b>Текущий тип:</b> {text_type}",
         reply_markup=kb.btn_promo_type(is_multi=is_multi),
     )
@@ -420,13 +419,88 @@ async def process_promo_code_day(message: Message, state: FSMContext):
 
     data = await state.get_data()
     send_message_id = data.get("send_message_id")
-    is_multi = data.get("is_multi", False)
 
     try:
-        day = int(message.text)
-        # Передаем параметр is_multi в базу данных
-        PromoCode = await rq.create_promo_code(day, is_multi=is_multi)
+        sub_days = int(message.text)
+        await state.update_data(sub_days=sub_days)
 
+        # Переводим на этап указания срока годности
+        await message.bot.edit_message_text(
+            chat_id=message.from_user.id,
+            message_id=send_message_id,
+            text=(
+                f"✅ Дни подписки: <b>{sub_days}</b>\n\n"
+                "⏳ Теперь укажите <b>срок годности</b> промокода (через сколько дней он сгорит):\n"
+                "<i>(Введите число или нажмите кнопку ниже для стандартных 3 дней)</i>"
+            ),
+            reply_markup=kb.btn_skip_validity,
+        )
+        await state.set_state(NewPromoCode.validity)
+
+    except ValueError:
+        try:
+            text_type = (
+                "Многоразовый ♾" if data.get("is_multi", False) else "Одноразовый 👤"
+            )
+            await message.bot.edit_message_text(
+                chat_id=message.from_user.id,
+                message_id=send_message_id,
+                text=(
+                    "🎁 Укажите количество <b>дней подписки</b>, которые даст промокод <i>(только число)</i>:\n\n"
+                    f"📌 <b>Текущий тип:</b> {text_type}\n\n"
+                    "❗️ Ошибка, укажите <b>цифру</b>"
+                ),
+                reply_markup=kb.btn_promo_type(is_multi=data.get("is_multi", False)),
+            )
+        except:
+            pass
+
+
+@admin_router.callback_query(NewPromoCode.validity, F.data == "skip_validity")
+async def callback_skip_validity(callback: CallbackQuery, state: FSMContext):
+    """Если нажали кнопку Пропустить (3 дня)"""
+    data = await state.get_data()
+    is_multi = data.get("is_multi", False)
+    sub_days = data.get("sub_days")
+
+    validity_days = 3
+
+    PromoCode = await rq.create_promo_code(
+        sub_days, is_multi=is_multi, validity_days=validity_days
+    )
+    type_text = "Многоразовый ♾" if is_multi else "Одноразовый 👤"
+
+    await callback.message.edit_text(
+        text=(
+            "🆕 Промокод создан: \n"
+            f"<code>https://t.me/malina_ezo_bot?start={PromoCode.get('code')}</code>\n"
+            f"Дней подписки: <b>{PromoCode.get('days')}</b>\n"
+            f"Тип: <b>{type_text}</b>\n"
+            f"Действует до: <b>{PromoCode.get('valid_before').strftime('%d.%m.%Y')}</b>"
+        ),
+        disable_web_page_preview=True,
+        reply_markup=kb.btn_back_admin,
+    )
+    await state.clear()
+    await callback.answer()
+
+
+@admin_router.message(NewPromoCode.validity)
+async def process_promo_code_validity(message: Message, state: FSMContext):
+    """Если ввели количество дней срока годности вручную"""
+    await message.delete()
+
+    data = await state.get_data()
+    send_message_id = data.get("send_message_id")
+    is_multi = data.get("is_multi", False)
+    sub_days = data.get("sub_days")
+
+    try:
+        validity_days = int(message.text)
+
+        PromoCode = await rq.create_promo_code(
+            sub_days, is_multi=is_multi, validity_days=validity_days
+        )
         type_text = "Многоразовый ♾" if is_multi else "Одноразовый 👤"
 
         await message.bot.edit_message_text(
@@ -449,10 +523,12 @@ async def process_promo_code_day(message: Message, state: FSMContext):
                 chat_id=message.from_user.id,
                 message_id=send_message_id,
                 text=(
-                    "Укажите срок действия промокода в днях <i>(Укажите только число)</i>\n\n"
+                    f"✅ Дни подписки: <b>{sub_days}</b>\n\n"
+                    "⏳ Теперь укажите <b>срок годности</b> промокода (через сколько дней он сгорит):\n"
+                    "<i>(Введите число или нажмите кнопку ниже для стандартных 3 дней)</i>\n\n"
                     "❗️ Ошибка, укажите <b>цифру</b>"
                 ),
-                reply_markup=kb.btn_back_admin,
+                reply_markup=kb.btn_skip_validity,
             )
         except:
             pass

@@ -26,7 +26,6 @@ btn_card_day = InlineKeyboardMarkup(
     ]
 )
 
-# Клавиатура для напоминания пользователям с подпиской
 btn_reminder_subscription = InlineKeyboardMarkup(
     inline_keyboard=[
         [InlineKeyboardButton(text="🃏 Расклад таро", callback_data="tarot")],
@@ -34,14 +33,12 @@ btn_reminder_subscription = InlineKeyboardMarkup(
     ]
 )
 
-# Клавиатура для напоминания, когда есть таро-гаданий
 btn_tarot_from_reminder = InlineKeyboardMarkup(
     inline_keyboard=[
         [InlineKeyboardButton(text="🃏 Задать вопрос", callback_data="tarot_reminder")]
     ]
 )
 
-# продолжение карт тыро
 btn_continuation_tarot = InlineKeyboardMarkup(
     inline_keyboard=[
         [
@@ -53,7 +50,6 @@ btn_continuation_tarot = InlineKeyboardMarkup(
     ]
 )
 
-# Клавиатура для напоминания, когда нет таро-гаданий
 btn_more_info_from_reminder = InlineKeyboardMarkup(
     inline_keyboard=[
         [InlineKeyboardButton(text="✨ Узнать больше", callback_data="learn_more")]
@@ -79,7 +75,6 @@ btn_attempts = InlineKeyboardMarkup(
 
 
 def btn_web_payment(message_id: str, user_id: int, back: bool = False):
-    # Кодируем вопрос для безопасной передачи в URL
     if back:
         return InlineKeyboardMarkup(
             inline_keyboard=[
@@ -149,7 +144,6 @@ btn_management_subscription = InlineKeyboardMarkup(
 
 
 def webapp_button(message_id: str):
-    # Кодируем вопрос для безопасной передачи в URL
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -230,12 +224,24 @@ btn_promo_code = InlineKeyboardMarkup(
 )
 
 
-# НОВАЯ ФУНКЦИЯ для динамической клавиатуры типа промокода
 def btn_promo_type(is_multi: bool):
-    text_button = "Сделать одноразовым 👤" if is_multi else "Сделать многоразовым ♾"
+    text_button = "Одноразовый 👤" if is_multi else "Многоразовый ♾"
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text=text_button, callback_data="toggle_promo_type")],
             [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_admin")],
         ]
     )
+
+
+# НОВАЯ КЛАВИАТУРА для этапа установки срока годности
+btn_skip_validity = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text="⏳ По умолчанию (3 дня)", callback_data="skip_validity"
+            )
+        ],
+        [InlineKeyboardButton(text="⬅️ Отмена", callback_data="back_admin")],
+    ]
+)

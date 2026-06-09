@@ -14,13 +14,10 @@ logger = logging.getLogger(__name__)
 
 async def add_user(telegram_id: int, user_name: str, args: str | None) -> None:
     async with async_session() as session:
-        # Проверяем, существует ли пользователь
         user = await session.scalar(select(User).where(User.telegram_id == telegram_id))
 
         if not user:
-            # Обрабатываем разные сценарии args
             if args is None:
-                # Обычная регистрация без рефера и без подарка
                 session.add(
                     User(
                         telegram_id=telegram_id,
@@ -29,7 +26,6 @@ async def add_user(telegram_id: int, user_name: str, args: str | None) -> None:
                 )
 
             elif args is not None and "gift" in args and await get_promo_code(args):
-                # Регистрация с подарком подписки
                 gift_days = (await get_promo_code(args)).days
 
                 session.add(
@@ -65,7 +61,6 @@ async def add_user(telegram_id: int, user_name: str, args: str | None) -> None:
                 )
 
             else:
-                # Реферальная регистрация
                 try:
                     referrer_id = int(args)
                     session.add(
@@ -76,7 +71,6 @@ async def add_user(telegram_id: int, user_name: str, args: str | None) -> None:
                         )
                     )
 
-                    # Начисляем бонус рефереру
                     user_ref = await session.scalar(
                         select(User).where(User.telegram_id == referrer_id)
                     )
@@ -99,7 +93,6 @@ async def add_user(telegram_id: int, user_name: str, args: str | None) -> None:
                             )
 
                 except (ValueError, TypeError):
-                    # Если args не является числом, создаем пользователя без рефера
                     session.add(
                         User(
                             telegram_id=telegram_id,
@@ -200,40 +193,26 @@ async def check_user_subscription(telegram_id: int) -> Subscription | None:
             select(Subscription).where(Subscription.telegram_id == telegram_id)
         )
         if subscription and subscription.end_date > datetime.now():
-
-            # Считаем разницу времени
             remaining_time = subscription.end_date - datetime.now()
             days_left = remaining_time.days
-
-            # Если осталось меньше дня, но время еще есть, считаем как 1 день (или 0, на твое усмотрение)
-            # Здесь логика: если есть подписка, то возвращаем True
             return {
                 "is_active": True,
-                "days_left": max(1, days_left),  # Защита от отрицательных чисел
+                "days_left": max(1, days_left),
             }
-
-        # Если подписки нет в базе или срок истек
         return {"is_active": False, "days_left": 0}
 
 
 async def CardDayRese() -> None:
-    """Сбрасывает card_day на 1 для всех пользователей."""
     async with async_session() as session:
         await session.execute(update(User).where(User.card_day <= 0).values(card_day=1))
         await session.commit()
 
 
-# --- Обновленная функция для получения подписки ---
 async def get_user(telegram_id: int):
-    """
-    Получает информацию о подписке пользователя.
-    Возвращает объект Subscription, User или False, если подписки нет.
-    """
     async with async_session() as session:
         return await session.scalar(select(User).where(User.telegram_id == telegram_id))
 
 
-# Добавить функцию для создания подписки при успешной оплате
 async def create_subscription(
     telegram_id: int,
     payment_method_id: str,
@@ -241,9 +220,7 @@ async def create_subscription(
     subscription_id: str = None,
     email: str = None,
 ) -> None:
-    """Создает или обновляет подписку пользователя после успешной оплаты"""
     async with async_session() as session:
-        # Проверяем существующую подписку
         subscription = await session.scalar(
             select(Subscription).where(Subscription.telegram_id == telegram_id)
         )
@@ -260,7 +237,6 @@ async def create_subscription(
         tariff_str = f"subscription({amount.split('.')[0]})"
 
         if subscription:
-            # Обновляем существующую подписку
             await session.execute(
                 update(Subscription)
                 .where(Subscription.telegram_id == telegram_id)
@@ -268,7 +244,7 @@ async def create_subscription(
                     tariff=tariff_str,
                     is_recurring=True,
                     payment_method_id=payment_method_id,
-                    end_date=end_date,  # Подписка на 30 дней
+                    end_date=end_date,
                     payment_attempts=0,
                     subscription_id=subscription_id,
                     email=email,
@@ -276,7 +252,6 @@ async def create_subscription(
             )
         else:
             await update_statistic("purchased_subs")
-            # Создаем новую подписку
             session.add(
                 Subscription(
                     telegram_id=telegram_id,
@@ -290,7 +265,6 @@ async def create_subscription(
                 )
             )
 
-        # Также обновляем пользователя
         await session.execute(
             update(User)
             .where(User.telegram_id == telegram_id)
@@ -301,7 +275,6 @@ async def create_subscription(
 
 
 async def activ_or_reactivate_subscription(telegram_id: int) -> None:
-    """Активирует или реактивирует подписку пользователя"""
     async with async_session() as session:
         subscription = await session.scalar(
             select(User).where(User.telegram_id == telegram_id)
@@ -321,7 +294,6 @@ async def activ_or_reactivate_subscription(telegram_id: int) -> None:
 
 
 async def update_cansel_subscription(telegram_id: int) -> bool:
-    """Отменяет подписку пользователя если она payment_attempts >= 2"""
     async with async_session() as session:
         subscription = await session.scalar(
             select(Subscription).where(Subscription.telegram_id == telegram_id)
@@ -353,24 +325,18 @@ async def update_cansel_subscription(telegram_id: int) -> bool:
 
 async def del_sub(telegram_id) -> None:
     async with async_session() as session:
-
         await session.execute(
             delete(Subscription).where(Subscription.telegram_id == telegram_id)
         )
         await session.execute(
             update(User)
             .where(User.telegram_id == telegram_id)
-            .values(
-                tariff="free", is_recurring=None
-            )  # Сбрасываем тариф и флаг рекуррентности
+            .values(tariff="free", is_recurring=None)
         )
         await session.commit()
 
 
 async def update_recurring_subscription() -> list[Subscription]:
-    """
-    Создает задачу на оплату в определенное время.
-    """
     async with async_session() as session:
         today_start = datetime.now().replace(
             hour=0, minute=0, second=0, microsecond=0
@@ -394,9 +360,6 @@ async def update_recurring_subscription() -> list[Subscription]:
 
 
 async def update_recurring_subscription_now() -> list[Subscription]:
-    """
-    Создает задачу на оплату в определенное время.
-    """
     async with async_session() as session:
         today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         today_end = today_start + timedelta(days=1)
@@ -417,9 +380,7 @@ async def update_recurring_subscription_now() -> list[Subscription]:
         return expired_subscriptions.scalars().all()
 
 
-# Добавить функцию для получения подписки пользователя
 async def get_user_subscription(telegram_id: int) -> Subscription:
-    """Получает подписку пользователя"""
     async with async_session() as session:
         return await session.scalar(
             select(Subscription).where(Subscription.telegram_id == telegram_id)
@@ -427,13 +388,10 @@ async def get_user_subscription(telegram_id: int) -> Subscription:
 
 
 async def get_statistics() -> tuple[int, int]:
-    """Получение статистики для Админа"""
     async with async_session() as session:
-        # Количество всех пользователей
         user_count_result = await session.execute(select(func.count(User.telegram_id)))
         count_user = user_count_result.scalar()
 
-        # Количество всех подписок
         subscription_count_result = await session.execute(
             select(func.count(User.telegram_id)).where(User.tariff == "subscription")
         )
@@ -472,16 +430,20 @@ async def get_promo_code(code) -> GiftCode:
         return await session.scalar(select(GiftCode).where(GiftCode.code == code))
 
 
-async def create_promo_code(days: int, is_multi: bool = False) -> dict:
+# ИЗМЕНЕНА: Добавлен аргумент validity_days
+async def create_promo_code(
+    days: int, is_multi: bool = False, validity_days: int = 3
+) -> dict:
     async with async_session() as session:
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        valid_before = today + timedelta(days=3)
+
+        # Срок годности теперь зависит от переменной
+        valid_before = today + timedelta(days=validity_days)
 
         random_part = "".join(
             secrets.choice(string.ascii_letters + string.digits) for _ in range(8)
         )
 
-        # Выбираем префикс в зависимости от типа
         prefix = "mgift-" if is_multi else "gift-"
         code_str = f"{prefix}{random_part}"
 
@@ -509,9 +471,7 @@ async def del_promo_code() -> None:
         await session.commit()
 
 
-# ================== Статистика =======================
 async def add_statistics() -> None:
-    """Добавляет запись статистики за текущий день."""
     async with async_session() as session:
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         existing = await session.scalar(
@@ -528,7 +488,6 @@ async def add_statistics() -> None:
 
 
 async def update_statistic(value: str, count: int = None) -> None:
-    """Увеличивает счетчик checkout_initiated на 1 за текущий день."""
     async with async_session() as session:
         data_time = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         stats = await session.scalar(
@@ -536,7 +495,6 @@ async def update_statistic(value: str, count: int = None) -> None:
         )
 
         if not stats:
-            # Если статистика за сегодня отсутствует, создаем новую запись
             await add_statistics()
 
         column_obj = getattr(Statistics, value)
@@ -544,20 +502,13 @@ async def update_statistic(value: str, count: int = None) -> None:
         await session.execute(
             update(Statistics)
             .where(Statistics.date == data_time)
-            .values(
-                {value: column_obj + 1 if count is None else count}
-            )  # Словарь: {"имя_колонки": выражение + 1 или count}
+            .values({value: column_obj + 1 if count is None else count})
         )
 
         await session.commit()
 
 
 async def get_statistics_data():
-    """
-    Получает сырые данные из БД:
-    1. Статистику за последние 7 дней.
-    2. Все подписки (или последние N, если их много).
-    """
     async with async_session() as session:
         data_time = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         stats = await session.scalar(
@@ -565,10 +516,8 @@ async def get_statistics_data():
         )
 
         if not stats:
-            # Если статистика за сегодня отсутствует, создаем новую запись
             await add_statistics()
 
-        # Берем данные за 7 дней
         seven_days_ago = datetime.now() - timedelta(days=7)
 
         user_count_result = await session.execute(select(func.count(User.telegram_id)))
@@ -589,7 +538,6 @@ async def get_statistics_data():
         )
         await session.commit()
 
-        # Запрос статистики (сортируем по дате, чтобы график был правильным)
         stats_result = await session.execute(
             select(Statistics)
             .where(Statistics.date >= seven_days_ago)
@@ -597,7 +545,6 @@ async def get_statistics_data():
         )
         stats = stats_result.scalars().all()
 
-        # Запрос подписок (можно добавить лимит .limit(50))
         sub_result = await session.execute(select(Subscription))
         subs = sub_result.scalars().all()
 
