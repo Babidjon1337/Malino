@@ -10,13 +10,10 @@ from aiogram.exceptions import TelegramBadRequest
 import app.keyboards as kb
 import app.database.requests as rq
 
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
 admin_router = Router()
-
 
 ADMINS = [932050484, 1186592191, 983660321]
 
@@ -35,7 +32,6 @@ async def command_admin(message: Message, state: FSMContext):
     await state.clear()
 
     if message.from_user.id in ADMINS:
-
         await message.answer(
             "<b>Админ-панель</b>",
             reply_markup=kb.admin_keyboard,
@@ -48,7 +44,6 @@ async def callback_cansel_send_all_users(callback: CallbackQuery, state: FSMCont
     await callback.answer()
 
     if callback.from_user.id in ADMINS:
-
         try:
             await callback.message.edit_text(
                 "<b>Админ-панель</b>",
@@ -96,7 +91,6 @@ async def process_media_group(message: Message, state: FSMContext):
 
     if media_group_id not in media_groups:
         media_groups[media_group_id] = []
-
         # ✅ запускаем обработку ОТДЕЛЬНОМ ФОНОВЫМ ПОТОКОМ
         asyncio.create_task(process_album_after_delay(media_group_id, state, message))
 
@@ -127,7 +121,6 @@ async def process_album_after_delay(
 @admin_router.message(MessageAllUsersState.Admin_text)
 async def process_single_message(message: Message, state: FSMContext):
     """Обработка одиночных сообщений (текст, одно фото, гифка, видео-кружок)"""
-    # Проверяем, что это не часть медиагруппы (на всякий случай)
     if message.media_group_id:
         return
 
@@ -259,18 +252,14 @@ async def callback_to_send_all_users(callback: CallbackQuery, state: FSMContext)
             f"📤 Начинаю рассылку для {len(users)} пользователей..."
         )
 
-        # Обработка разных типов контента
         for user in users:
             user_id = user.telegram_id
             try:
-                # Если это альбом
                 if is_album:
-                    # Создаем медиагруппу
                     media = []
                     for i, msg in enumerate(admin_text):
                         if msg.photo:
                             photo = msg.photo[-1]
-                            # Для первого фото добавляем подпись, если есть
                             caption = msg.caption if i == 0 and msg.caption else None
                             media.append(
                                 InputMediaPhoto(media=photo.file_id, caption=caption)
@@ -289,7 +278,6 @@ async def callback_to_send_all_users(callback: CallbackQuery, state: FSMContext)
                                 reply_markup=reply_markup,
                             )
 
-                # Текстовое сообщение
                 elif admin_text.text:
                     await callback.bot.send_message(
                         user_id,
@@ -298,7 +286,6 @@ async def callback_to_send_all_users(callback: CallbackQuery, state: FSMContext)
                         reply_markup=reply_markup,
                     )
 
-                # Одиночное фото
                 elif admin_text.photo:
                     photo = admin_text.photo[-1]
                     caption = admin_text.caption if admin_text.caption else None
@@ -309,7 +296,6 @@ async def callback_to_send_all_users(callback: CallbackQuery, state: FSMContext)
                         reply_markup=reply_markup,
                     )
 
-                # GIF
                 elif admin_text.animation:
                     caption = admin_text.caption if admin_text.caption else None
                     await callback.bot.send_animation(
@@ -319,7 +305,6 @@ async def callback_to_send_all_users(callback: CallbackQuery, state: FSMContext)
                         reply_markup=reply_markup,
                     )
 
-                # Видео-кружок
                 elif admin_text.video_note:
                     await callback.bot.send_video_note(
                         chat_id=user_id, video_note=admin_text.video_note.file_id
@@ -351,7 +336,6 @@ async def callback_to_send_all_users(callback: CallbackQuery, state: FSMContext)
         )
         await state.clear()
 
-        # Удаляем исходные сообщения
         try:
             if is_album:
                 for msg in admin_text:
@@ -381,6 +365,7 @@ async def callback_promo_codes(callback: CallbackQuery):
                     f"<code>https://t.me/malina_ezo_bot?start={item.code}</code>\n"
                     f"Дней: <b>{item.days}</b>\n"
                     f"Действует до: <b>{item.valid_before.strftime('%d.%m.%Y')}</b>\n"
+                    f"Тип: <b>{'Многоразовый ♾' if 'mgift' in item.code else 'Одноразовый 👤'}</b>\n"
                     for item in PromoCodes
                 ]
             )
@@ -400,23 +385,49 @@ async def callback_promo_codes(callback: CallbackQuery):
 async def callback_new_promo_code(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
+    # По умолчанию код одноразовый
+    await state.update_data(is_multi=False)
+
     send_message = await callback.message.edit_text(
-        "Укажите срок действия промокода в днях <i>(Укажите только число)</i>",
-        reply_markup=kb.btn_back_admin,
+        "Укажите срок действия промокода в днях <i>(Укажите только число)</i>\n\n"
+        "📌 <b>Текущий тип:</b> Одноразовый 👤",
+        reply_markup=kb.btn_promo_type(is_multi=False),
     )
     await state.update_data(send_message_id=send_message.message_id)
     await state.set_state(NewPromoCode.day)
+
+
+@admin_router.callback_query(NewPromoCode.day, F.data == "toggle_promo_type")
+async def toggle_promo_type(callback: CallbackQuery, state: FSMContext):
+    """Обработчик кнопки переключения типа промокода"""
+    data = await state.get_data()
+    is_multi = not data.get("is_multi", False)
+    await state.update_data(is_multi=is_multi)
+
+    text_type = "Многоразовый ♾" if is_multi else "Одноразовый 👤"
+
+    await callback.message.edit_text(
+        "Укажите срок действия промокода в днях <i>(Укажите только число)</i>\n\n"
+        f"📌 <b>Текущий тип:</b> {text_type}",
+        reply_markup=kb.btn_promo_type(is_multi=is_multi),
+    )
+    await callback.answer()
 
 
 @admin_router.message(NewPromoCode.day)
 async def process_promo_code_day(message: Message, state: FSMContext):
     await message.delete()
 
-    send_message_id = await state.get_value("send_message_id")
+    data = await state.get_data()
+    send_message_id = data.get("send_message_id")
+    is_multi = data.get("is_multi", False)
+
     try:
         day = int(message.text)
+        # Передаем параметр is_multi в базу данных
+        PromoCode = await rq.create_promo_code(day, is_multi=is_multi)
 
-        PromoCode = await rq.create_promo_code(day)
+        type_text = "Многоразовый ♾" if is_multi else "Одноразовый 👤"
 
         await message.bot.edit_message_text(
             chat_id=message.from_user.id,
@@ -424,7 +435,8 @@ async def process_promo_code_day(message: Message, state: FSMContext):
             text=(
                 "🆕 Промокод создан: \n"
                 f"<code>https://t.me/malina_ezo_bot?start={PromoCode.get('code')}</code>\n"
-                f"Дней: <b>{PromoCode.get('days')}</b>\n"
+                f"Дней подписки: <b>{PromoCode.get('days')}</b>\n"
+                f"Тип: <b>{type_text}</b>\n"
                 f"Действует до: <b>{PromoCode.get('valid_before').strftime('%d.%m.%Y')}</b>"
             ),
             disable_web_page_preview=True,

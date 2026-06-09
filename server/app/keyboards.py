@@ -136,14 +136,6 @@ back_to_subscription = InlineKeyboardMarkup(
 )
 
 
-# def subscription_payment(payment_link: str):
-#     return InlineKeyboardMarkup(
-#         inline_keyboard=[
-#             [InlineKeyboardButton(text="💳 Перейти к оплате", url=payment_link)],
-#         ]
-#     )
-
-
 btn_management_subscription = InlineKeyboardMarkup(
     inline_keyboard=[
         [
@@ -236,3 +228,14 @@ btn_promo_code = InlineKeyboardMarkup(
         ],
     ]
 )
+
+
+# НОВАЯ ФУНКЦИЯ для динамической клавиатуры типа промокода
+def btn_promo_type(is_multi: bool):
+    text_button = "Сделать одноразовым 👤" if is_multi else "Сделать многоразовым ♾"
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=text_button, callback_data="toggle_promo_type")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_admin")],
+        ]
+    )

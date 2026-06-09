@@ -9,7 +9,6 @@ from dateutil.relativedelta import relativedelta
 
 from app.database.models import User, Subscription, GiftCode, Statistics, async_session
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -52,7 +51,9 @@ async def add_user(telegram_id: int, user_name: str, args: str | None) -> None:
                     )
                 )
 
-                await session.execute(delete(GiftCode).where(GiftCode.code == args))
+                # ВАЖНО: Удаляем ТОЛЬКО если это одноразовый купон (начинается на gift-)
+                if args.startswith("gift-"):
+                    await session.execute(delete(GiftCode).where(GiftCode.code == args))
 
             elif args is not None and "special-link" in args:
                 session.add(
@@ -132,7 +133,9 @@ async def add_user(telegram_id: int, user_name: str, args: str | None) -> None:
                 )
             )
 
-            await session.execute(delete(GiftCode).where(GiftCode.code == args))
+            # ВАЖНО: Удаляем ТОЛЬКО если это одноразовый купон (начинается на gift-)
+            if args.startswith("gift-"):
+                await session.execute(delete(GiftCode).where(GiftCode.code == args))
 
         await session.commit()
 
@@ -469,7 +472,7 @@ async def get_promo_code(code) -> GiftCode:
         return await session.scalar(select(GiftCode).where(GiftCode.code == code))
 
 
-async def create_promo_code(days: str) -> dict:
+async def create_promo_code(days: int, is_multi: bool = False) -> dict:
     async with async_session() as session:
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         valid_before = today + timedelta(days=3)
@@ -478,9 +481,13 @@ async def create_promo_code(days: str) -> dict:
             secrets.choice(string.ascii_letters + string.digits) for _ in range(8)
         )
 
+        # Выбираем префикс в зависимости от типа
+        prefix = "mgift-" if is_multi else "gift-"
+        code_str = f"{prefix}{random_part}"
+
         session.add(
             GiftCode(
-                code=f"gift-{random_part}",
+                code=code_str,
                 days=days,
                 valid_before=valid_before,
             )
@@ -488,7 +495,7 @@ async def create_promo_code(days: str) -> dict:
         await session.commit()
 
         return {
-            "code": f"gift-{random_part}",
+            "code": code_str,
             "days": days,
             "valid_before": valid_before,
         }
