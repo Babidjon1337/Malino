@@ -86,30 +86,23 @@ def message_prompt(text: str, prompt: str, args_list: list) -> dict:
 async def generate_response(text, prompt, *args):
     args_list = list(args)
 
-    max_retries = 4  # Всего 3 попытки
+    max_retries = 4  # Всего 4 попытки
 
-    providers = [
-        "baseten",
-        "wandb",
-        "friendli",
-        "together",
-        "nebius",
-        "deepinfra",
-        "novita",
-    ]
+    # Провайдеры, которые нельзя использовать
+    # (остальные разрешены, OpenRouter сам выберет лучший по скорости
+    # и переключится на другой провайдер при ошибке)
+    ignored_providers = ["modal/fp8"]
 
     for attempt in range(max_retries):
         try:
             completion = await client.chat.completions.create(
-                model="qwen/qwen3-235b-a22b-2507",
-                # model="deepseek/deepseek-chat-v3-0324",
-                # model="deepseek/deepseek-chat-v3-0324:free",
+                model="z-ai/glm-5.3-flash",
                 messages=message_prompt(text, prompt, args_list),
                 extra_body={
                     "provider": {
-                        "only": providers,
+                        "ignore": ignored_providers,
                         "sort": "throughput",
-                        "allow_fallbacks": False,
+                        "allow_fallbacks": True,
                     },
                 },
                 extra_headers={
@@ -197,26 +190,12 @@ async def generate_response(text, prompt, *args):
                 return "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
 
         except APIError as e:
-            error_message = str(e).lower()
-
-            # Проверяем, связана ли ошибка с конкретным провайдером
-            for provider in providers[:]:  # Используем копию для безопасного удаления
-                if provider.lower() in error_message:
-                    logger.warning(
-                        f"⚠️ Обнаружена проблема с провайдером {provider}, удаляем из списка"
-                    )
-                    providers.remove(provider)
-                    continue
-
-            # Если провайдеры закончились, сразу возвращаем ошибку
-            if not providers:
-                logger.error("🔴 Все провайдеры исключены из-за ошибок")
-                return "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
-
+            # allow_fallbacks=True: OpenRouter сам переключит провайдера,
+            # здесь просто повторяем запрос с бэкоффом
             if attempt < max_retries - 1:
                 wait_time = 2 ** (attempt + 1)
                 logger.warning(
-                    f"⚠️ Ошибка API. Ждем {wait_time} секунд... Доступно провайдеров: {len(providers)}"
+                    f"⚠️ Ошибка API. Ждем {wait_time} секунд... {str(e)}"
                 )
                 await asyncio.sleep(wait_time)
                 continue
