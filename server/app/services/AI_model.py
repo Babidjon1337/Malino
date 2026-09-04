@@ -155,10 +155,9 @@ async def generate_response_stream(text, prompt, *args):
                         "sort": "throughput",
                         "allow_fallbacks": True,
                     },
-                    # Размышления отключены полностью: ответ приходит быстрее
-                    # и блок <think> в принципе не может попасть в текст
+                    # Размышления у этой модели обязательны (отключить нельзя —
+                    # провайдер вернет 400), но exclude не дает им попасть в ответ
                     "reasoning": {
-                        "enabled": False,
                         "exclude": True,
                     },
                 },
@@ -224,6 +223,11 @@ async def generate_response_stream(text, prompt, *args):
             logger.error(
                 f"🔴 OpenRouter: неверный API-ключ (401). Проверьте AI_TOKEN в .env: {e}"
             )
+            return
+
+        except BadRequestError as e:
+            # 400: ошибка в самом запросе — повторы дадут то же самое
+            logger.error(f"🔴 OpenRouter: неверный запрос (400): {e}")
             return
 
         except RateLimitError as e:

@@ -180,8 +180,14 @@ async def stream_to_draft(
                 if target > shown:
                     shown = target
                     try:
+                        # parse_mode=None: драфт показывает чистый текст;
+                        # в новых aiogram драфт иначе наследует HTML-дефолт бота,
+                        # и незакрытые/случайные теги ломали бы обновление
                         await bot.send_message_draft(
-                            chat_id=chat_id, draft_id=draft_id, text=plain[:shown]
+                            chat_id=chat_id,
+                            draft_id=draft_id,
+                            text=plain[:shown],
+                            parse_mode=None,
                         )
                     except TelegramRetryAfter as e:
                         logger.warning(
