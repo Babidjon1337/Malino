@@ -1,6 +1,3 @@
-import re
-import html
-import time
 import random
 import logging
 import asyncio
@@ -11,12 +8,10 @@ from aiogram.filters import CommandStart, Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.base import StorageKey
-from aiogram.exceptions import (
-    TelegramBadRequest,
-    TelegramRetryAfter,
-)  # Добавлен импорт исключений
+from aiogram.exceptions import TelegramBadRequest  # Добавлен импорт исключения
 
 from app.services.yookassa_service import yookassa_service
+from app.services.draft import stream_to_draft, typing_frames
 from app.others.text_message import *
 import app.services.AI_model as AI
 import app.keyboards as kb
@@ -71,165 +66,6 @@ def handle_old_queries(answer_text: str = None):
         return wrapper
 
     return decorator
-
-
-# Драфт — «живая» печать ответа. Телеграм держит драфт как 30-секундный
-# превью, поэтому весь текст нужно успеть напечатать за это окно.
-DRAFT_TICK = 0.7  # как часто обновляем драфт, сек
-DRAFT_MIN_CHARS = 60  # минимум символов за тик (темп для коротких ответов)
-DRAFT_TOTAL_SECONDS = 20  # за столько секунд печать должна закончиться
-
-ERROR_TEXT = "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
-
-
-def _plain(text: str) -> str:
-    """
-    Текст для драфта: без HTML-тегов. Драфт разметку не форматирует,
-    поэтому теги в нем видны как обычный текст (<b>Карта дня</b>).
-    """
-    return html.unescape(re.sub(r"<[^>]+>", "", text))
-
-
-def _snap_to_word(text: str, pos: int) -> int:
-    """Сдвигает границу показа к концу слова, чтобы не рвать слова посередине."""
-    if pos >= len(text):
-        return len(text)
-    start = max(0, pos - 30)
-    best = max(text.rfind(" ", start, pos), text.rfind("\n", start, pos))
-    return best + 1 if best > 0 else pos
-
-
-async def stream_to_draft(
-    bot: Bot,
-    chat_id: int,
-    agen,
-    placeholder_id: int | None = None,
-    on_first_chunk=None,
-) -> str:
-    """
-    Показывает ответ AI «вживую»: текст допечатывается в драфт-сообщении
-    ровным читаемым темпом, а в конце приходит обычное сообщение с полным
-    ответом (оно же убирает драфт).
-
-    Модель генерирует в разы быстрее, чем человек читает, поэтому темп
-    показа задают тики, а не скорость провайдера: на каждом тике остаток
-    делится на число оставшихся тиков до DRAFT_TOTAL_SECONDS. Так печать
-    идет плавно и всегда успевает закончиться внутри 30-секундного окна.
-
-    - placeholder_id — сообщение «генерирую...», убирается на первом кусочке
-    - on_first_chunk — корутина, вызывается на первом кусочке (например, фото карты)
-    - возвращает финальный текст ответа (или ERROR_TEXT при сбое)
-    """
-    draft_id = random.randint(1, 1_000_000)
-    raw_text = ""  # последний накопленный ответ (с HTML-разметкой)
-    stream_done = False
-    stream_error = None
-
-    async def reader():
-        nonlocal raw_text, stream_done, stream_error
-        try:
-            async for visible in agen:
-                raw_text = visible
-        except Exception as e:
-            stream_error = e
-        finally:
-            stream_done = True
-
-    async def drop_placeholder():
-        nonlocal placeholder_id
-        if placeholder_id is None:
-            return
-        msg_id, placeholder_id = placeholder_id, None
-        try:
-            await bot.delete_message(chat_id=chat_id, message_id=msg_id)
-        except TelegramBadRequest as e:
-            logger.warning(f"⚠️ Не удалось убрать сообщение-заглушку: {e}")
-
-    reader_task = asyncio.create_task(reader())
-    shown = 0
-    started = None
-
-    try:
-        while True:
-            plain = _plain(raw_text).strip()
-
-            if plain and started is None:
-                # Первый кусочек текста: убираем заглушку и отдаем управление хендлеру
-                started = time.monotonic()
-                await drop_placeholder()
-                if on_first_chunk is not None:
-                    try:
-                        await on_first_chunk()
-                    except Exception:
-                        logger.exception("⚠️ on_first_chunk упал (не критично)")
-                    on_first_chunk = None
-
-            if plain:
-                elapsed = time.monotonic() - started
-                behind = len(plain) - shown
-                # Сколько тиков осталось до конца отведенного времени
-                ticks_left = max(1, int((DRAFT_TOTAL_SECONDS - elapsed) / DRAFT_TICK))
-                step = max(DRAFT_MIN_CHARS, -(-behind // ticks_left))  # ceil
-                out_of_time = elapsed >= DRAFT_TOTAL_SECONDS
-
-                if out_of_time or (stream_done and behind <= step):
-                    target = len(plain)  # хвост показываем целиком
-                else:
-                    target = _snap_to_word(plain, shown + step)
-
-                if target > shown:
-                    shown = target
-                    try:
-                        # parse_mode=None: драфт показывает чистый текст;
-                        # в новых aiogram драфт иначе наследует HTML-дефолт бота,
-                        # и незакрытые/случайные теги ломали бы обновление
-                        await bot.send_message_draft(
-                            chat_id=chat_id,
-                            draft_id=draft_id,
-                            text=plain[:shown],
-                            parse_mode=None,
-                        )
-                    except TelegramRetryAfter as e:
-                        logger.warning(
-                            f"⚠️ Флуд-лимит на драфте, ждем {e.retry_after} сек"
-                        )
-                        await asyncio.sleep(e.retry_after)
-                    except TelegramBadRequest as e:
-                        # Драфт не критичен: текст все равно придет сообщением
-                        logger.warning(f"⚠️ Драфт не обновился: {e}")
-
-                if out_of_time or (stream_done and shown >= len(plain)):
-                    break
-            elif stream_done:
-                break
-
-            await asyncio.sleep(DRAFT_TICK)
-    finally:
-        # Дочитываем остаток потока, чтобы отправить полный ответ
-        try:
-            await reader_task
-        except Exception as e:
-            logger.error(f"🔴 Ошибка чтения стрима: {e}")
-
-    if stream_error:
-        logger.error(f"🔴 Стрим завершился с ошибкой: {stream_error}")
-
-    if not raw_text.strip():
-        await drop_placeholder()
-        await bot.send_message(chat_id=chat_id, text=ERROR_TEXT)
-        return ERROR_TEXT
-
-    # Финальное сообщение с полным ответом — оно же убирает драфт
-    try:
-        await bot.send_message(chat_id=chat_id, text=raw_text, parse_mode="HTML")
-    except TelegramBadRequest as e:
-        if "can't parse entities" in str(e):
-            clean_response = _plain(raw_text)
-            await bot.send_message(chat_id=chat_id, text=clean_response)
-            return clean_response
-        raise
-
-    return raw_text
 
 
 async def clear_tarot_keyboard_by_state(state: FSMContext, bot: Bot, user_id: int):
@@ -335,9 +171,11 @@ async def callback_sleep(callback: CallbackQuery, state: FSMContext):
 
 @router.message(sleep_data.text)
 async def message_sleep(message: Message, state: FSMContext):
-    msg = await message.answer(
-        "Проникаю в туман сновидений...\n✨ Раскрываю скрытые послания вашей души из ночного путешествия"
+    frames = typing_frames(
+        "Проникаю в туман сновидений",
+        "✨ Раскрываю скрытые послания вашей души из ночного путешествия",
     )
+    msg = await message.answer(frames[0])
 
     await state.update_data(text=message.text)
     data = await state.get_data()
@@ -352,6 +190,7 @@ async def message_sleep(message: Message, state: FSMContext):
         message.from_user.id,
         stream,
         placeholder_id=msg.message_id,
+        placeholder_frames=frames,
     )
     await rq.update_statistic("requests_sonnic")
 
@@ -425,10 +264,14 @@ async def webapp_tarot(
 
         await rq.take_away_tarot(user_id)
         # Редактируем исходное сообщение вместо удаления
+        frames = typing_frames(
+            "Карты настраиваются на ваш запрос",
+            "🃏 Ответ придет через мгновение",
+        )
         await bot.edit_message_text(
             chat_id=user_id,
             message_id=message_id,
-            text="Карты настраиваются на ваш запрос...\n🃏 Ответ придет через мгновение",
+            text=frames[0],
             parse_mode="HTML",
         )
 
@@ -466,6 +309,7 @@ async def webapp_tarot(
             user_id,
             stream,
             placeholder_id=message_id,
+            placeholder_frames=frames,
         )
 
         # # Генерируем продолжение
@@ -561,9 +405,11 @@ async def callback_card_day(callback: CallbackQuery, state: FSMContext):
             pass
 
     if await rq.check_card_day(callback.from_user.id):
-        msg = await callback.message.answer(
-            "Соединяюсь с космической энергией...\n🌌 Раскрываю тайны Вселенной для вашей карты дня"
+        frames = typing_frames(
+            "Соединяюсь с космической энергией",
+            "🌌 Раскрываю тайны Вселенной для вашей карты дня",
         )
+        msg = await callback.message.answer(frames[0])
         await rq.update_statistic("requests_map_day")
 
         selected_card = random.choice(tarot_deck)
@@ -582,6 +428,7 @@ async def callback_card_day(callback: CallbackQuery, state: FSMContext):
             callback.from_user.id,
             stream,
             placeholder_id=msg.message_id,
+            placeholder_frames=frames,
             on_first_chunk=send_card_photo,
         )
 

@@ -4,6 +4,7 @@ import re
 import traceback
 import asyncio
 import json
+import contextlib
 from datetime import datetime, timedelta  # Добавлены datetime, timedelta
 from contextlib import asynccontextmanager
 
@@ -18,6 +19,7 @@ from aiogram.client.session.aiohttp import AiohttpSession
 
 from app.services.async_task import TaskScheduler
 from app.services.yookassa_service import yookassa_service
+import app.services.AI_model as AI
 from app.handlers import router, webapp_tarot
 from app.admin_handler import admin_router
 from app.database.models import async_main
@@ -104,8 +106,12 @@ async def lifespan(app: FastAPI):
         # Закомментировать, если возвращаетесь на вебхуки:
         if polling_task:
             polling_task.cancel()
+            # Ждем фактического завершения поллинга, иначе процесс висит
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await polling_task
 
         await bot.session.close()
+        await AI.close_ai_client()  # закрываем HTTP-сессию OpenRouter
         logger.info("Сессия бота закрыта")
     except Exception as e:
         logger.error(f"Ошибка при завершении работы: {e}")
@@ -515,4 +521,12 @@ async def yookassa_webhook(request: Request):
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("main:app", host="0.0.0.0", port=PORT, reload=True)
+    # reload=True в продакшене замедляет остановку сервиса (релодер держит
+    # дочерний процесс) и перезапускает приложение при любом изменении файлов
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=PORT,
+        reload=False,
+        timeout_graceful_shutdown=5,  # не ждать зависшие соединения вечно
+    )

@@ -169,27 +169,37 @@ async def generate_response_stream(text, prompt, *args):
                 stream=True,
             )
 
-            async for chunk in stream:
-                if not chunk.choices:
-                    continue
-                content = chunk.choices[0].delta.content
-                if not content:
-                    continue
-                raw_parts.append(content)
+            try:
+                async for chunk in stream:
+                    if not chunk.choices:
+                        continue
+                    content = chunk.choices[0].delta.content
+                    if not content:
+                        continue
+                    raw_parts.append(content)
 
-                visible = _visible_text("".join(raw_parts)).strip()
-                if not visible:
-                    continue  # Модель пока только размышляет (<think>)
+                    visible = _visible_text("".join(raw_parts)).strip()
+                    if not visible:
+                        continue  # Модель пока только размышляет (<think>)
 
-                # Проверка на китайские иероглифы до первого показа
-                if contains_chinese(visible):
-                    if yielded:
-                        logger.warning("⚠️ Стрим: китайский иероглиф в середине ответа — обрываю")
-                        return
-                    raise ChineseInResponseError()
+                    # Проверка на китайские иероглифы до первого показа
+                    if contains_chinese(visible):
+                        if yielded:
+                            logger.warning(
+                                "⚠️ Стрим: китайский иероглиф в середине ответа — обрываю"
+                            )
+                            return
+                        raise ChineseInResponseError()
 
-                yielded = True
-                yield visible
+                    yielded = True
+                    yield visible
+            finally:
+                # Всегда закрываем HTTP-ответ стрима — и при раннем обрыве,
+                # и при ошибке, чтобы не оставлять висящее соединение с прокси
+                try:
+                    await stream.close()
+                except Exception:
+                    pass
 
             if not yielded:
                 # Провайдер отдал 200, но текста не прислал — перезапрашиваем
@@ -258,3 +268,8 @@ async def generate_response_stream(text, prompt, *args):
                 continue
             logger.error(f"🔴 Стрим не удался после всех попыток: {e}")
             return
+
+
+async def close_ai_client():
+    """Закрывает HTTP-сессию OpenRouter при остановке сервиса."""
+    await client.close()

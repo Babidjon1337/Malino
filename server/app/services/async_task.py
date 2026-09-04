@@ -187,5 +187,7 @@ class TaskScheduler:
 
     def shutdown(self):
         """Останавливает планировщик"""
-        self.scheduler.shutdown()
+        # wait=False: не ждать завершения текущих задач (например, массовой
+        # рассылки напоминаний), иначе рестарт сервиса висит минутами
+        self.scheduler.shutdown(wait=False)
         logger.info("TaskScheduler прекратил работу.")
