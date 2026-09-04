@@ -8,6 +8,10 @@ from config import AI_TOKEN, PROXY_URL
 from app.others.text_message import prompt_data
 
 
+class ChineseInResponseError(Exception):
+    """Модель вернула китайские иероглифы — запрос нужно повторить."""
+
+
 # Настройка логирования
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -83,19 +87,62 @@ def message_prompt(text: str, prompt: str, args_list: list) -> dict:
     return messages
 
 
-async def generate_response(text, prompt, *args):
+_THINK_OPEN = "<think>"
+
+
+def _visible_text(raw: str) -> str:
+    """
+    Убирает из сырого текста стрима блоки размышлений <think>...</think>
+    и заменяет <br> на переносы строк. Человек не должен увидеть ни сами
+    размышления, ни огрызки тега, который приходит из стрима по частям
+    (например "<th" или "<think" — пока закрывающий ">" еще не доехал).
+    """
+    # 1. Убираем полностью закрытые блоки размышлений
+    txt = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL | re.IGNORECASE)
+
+    # 2. Незакрытый <think> — модель еще размышляет, прячем всё после него
+    idx = txt.lower().rfind(_THINK_OPEN)
+    if idx != -1:
+        txt = txt[:idx]
+
+    # 3. Висячий закрывающий тег без открывающего (бывает у некоторых провайдеров)
+    txt = re.sub(r"</think>", "", txt, flags=re.IGNORECASE)
+
+    # 4. Частичный открывающий тег в конце потока ("<th", "<think" и т.п.)
+    #    прячем до тех пор, пока тег не соберется целиком (или не окажется
+    #    обычным текстом — тогда он вернется в следующем обновлении)
+    for k in range(min(len(txt), len(_THINK_OPEN)), 0, -1):
+        if _THINK_OPEN.startswith(txt[-k:].lower()):
+            txt = txt[:-k]
+            break
+
+    return txt.replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n")
+
+
+async def generate_response_stream(text, prompt, *args):
+    """
+    Асинхронный генератор: по мере генерации отдает накопленный чистый
+    текст ответа (без <think> и <br>).
+
+    - OpenRouter сам выбирает лучший провайдер по скорости (без modal/fp8)
+      и переключается на другой при ошибке (allow_fallbacks=True)
+    - ретраи только до первого кусочка текста (иначе текст задвоится)
+    - китайские иероглифы проверяются до первого показа: при находке запрос
+      повторяется; если стрим уже пошел — генерация просто обрывается
+    """
     args_list = list(args)
 
     max_retries = 4  # Всего 4 попытки
 
     # Провайдеры, которые нельзя использовать
-    # (остальные разрешены, OpenRouter сам выберет лучший по скорости
-    # и переключится на другой провайдер при ошибке)
     ignored_providers = ["modal/fp8"]
 
     for attempt in range(max_retries):
+        yielded = False  # Уже отдали кусочек текста наружу?
+        raw_parts: list[str] = []
+
         try:
-            completion = await client.chat.completions.create(
+            stream = await client.chat.completions.create(
                 model="z-ai/glm-5.3-flash",
                 messages=message_prompt(text, prompt, args_list),
                 extra_body={
@@ -104,127 +151,88 @@ async def generate_response(text, prompt, *args):
                         "sort": "throughput",
                         "allow_fallbacks": True,
                     },
+                    # Модель может думать, но размышления не попадают в ответ
+                    "reasoning": {
+                        "exclude": True,
+                    },
                 },
                 extra_headers={
                     "HTTP-Referer": "https://malinaezo.ru/",
                     "X-Title": "Malina bot",
                 },
-                temperature=0.5,  # Минимум креативности
-                # frequency_penalty=0.2,  # Штрафует модель за повторение одних и тех же слов
-                # presence_penalty=0.3,  # Поощряет модель вводить новые темы и идеи
-            )
-            if completion is None:
-                logger.error("🔴 OpenRouter API вернул None")
-                if attempt < max_retries - 1:
-                    continue
-                return "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
-
-            if not completion.choices:
-                logger.error("🔴 Список choices пуст в ответе API")
-                if attempt < max_retries - 1:
-                    continue
-                return "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
-
-            response = completion.choices[0].message.content
-
-            response = (
-                response.replace("<br>", "\n")
-                .replace("<br/>", "\n")
-                .replace("<br />", "\n")
+                temperature=0.5,
+                stream=True,
             )
 
-            # Проверка на символы <think>...</think>
-            if "<think>" in response:
-                return re.sub(
-                    r"<think>.*?</think>", "", response, flags=re.DOTALL | re.IGNORECASE
-                ).strip()
+            async for chunk in stream:
+                if not chunk.choices:
+                    continue
+                content = chunk.choices[0].delta.content
+                if not content:
+                    continue
+                raw_parts.append(content)
 
-            if "\n\n" not in response or "\n" not in response:
-                logger.warning("⚠️ Отсутствуют отступы в ответе")
+                visible = _visible_text("".join(raw_parts)).strip()
+                if not visible:
+                    continue  # Модель пока только размышляет (<think>)
 
-            # Проверяем, что completion не None и содержит ожидаемую структуру
-            # fmt: off
-            if not response or not isinstance(response, str) or len(response.strip()) == 0:
-            # fmt: on
-                logger.warning("⚠️ OpenRouter API возвращенная структура неожиданного ответа")
+                # Проверка на китайские иероглифы до первого показа
+                if contains_chinese(visible):
+                    if yielded:
+                        logger.warning("⚠️ Стрим: китайский иероглиф в середине ответа — обрываю")
+                        return
+                    raise ChineseInResponseError()
+
+                yielded = True
+                yield visible
+
+            if not yielded:
+                logger.warning("⚠️ Стрим: пустой ответ от API")
+            return
+
+        except ChineseInResponseError:
+            if attempt < max_retries - 1:
+                wait_time = 2 ** (attempt + 2)  # 4, 8, 16 секунды
+                logger.warning(
+                    f"⚠️ Стрим: китайский иероглиф. 北京是中国的首都\nЖдем {wait_time} сек и перезапрашиваем"
+                )
+                await asyncio.sleep(wait_time)
                 continue
-            
-            # Проверяет, содержит ли строка хотя бы один китайский иероглиф. 北京是中国的首都
-            if contains_chinese(response):
-                if attempt < max_retries - 1:  # Не ждем после последней попытки
-                    wait_time = 2 ** (attempt + 2)  # 2, 4, 8, 16 секунды
-                    logger.warning(
-                        "⚠️ Найдены китайский иероглиф. 北京是中国的首都\nПовторная попытка"
-                    )
-                    await asyncio.sleep(wait_time)
-                    continue
-                else:
-                    logger.error("🔴 Найдены китайский иероглиф. 北京是中国的首都")
-                    return "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
-
-            return response
+            logger.error("🔴 Стрим: китайский иероглиф после всех попыток. 北京是中国的首都")
+            return
 
         except AuthenticationError as e:
             # 401: ключ недействителен — повторять бессмысленно
             logger.error(
                 f"🔴 OpenRouter: неверный API-ключ (401). Проверьте AI_TOKEN в .env: {e}"
             )
-            return "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
+            return
 
         except RateLimitError as e:
-            if attempt < max_retries - 1:  # Не ждем после последней попытки
-                wait_time = 2 ** (attempt + 3)  # 8, 16, 32, 64 секунды
+            if yielded:
+                logger.error(f"🔴 Стрим прерван лимитом запросов: {e}")
+                return
+            if attempt < max_retries - 1:
+                wait_time = 2 ** (attempt + 3)  # 8, 16, 32 секунды
                 logger.warning(
                     f"⚠️ Лимит запросов. Ждем {wait_time} секунд перед повторной попыткой..."
                 )
                 await asyncio.sleep(wait_time)
                 continue
-            else:
-                print(
-                    "Слишком много запросов. Пожалуйста, попробуйте через несколько минут."
-                )
-                return "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
+            logger.error("🔴 Лимит запросов после всех попыток")
+            return
 
-        except APITimeoutError as e:
-            # Обработка таймаута
-            if attempt < max_retries - 1:
-                wait_time = 2 ** (attempt + 1)
-                logger.warning(f"⚠️ Таймаут запроса. Ждем {wait_time} секунд...")
-                await asyncio.sleep(wait_time)
-                continue
-            else:
-                logger.error("🔴 Таймаут после всех попыток")
-                return "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
-
-        except APIError as e:
-            # allow_fallbacks=True: OpenRouter сам переключит провайдера,
-            # здесь просто повторяем запрос с бэкоффом
+        except Exception as e:
+            if yielded:
+                # Часть текста уже отдана — перезапрос задвоил бы его
+                logger.error(f"🔴 Стрим прервался после начала генерации: {e}")
+                return
             if attempt < max_retries - 1:
                 wait_time = 2 ** (attempt + 1)
                 logger.warning(
-                    f"⚠️ Ошибка API. Ждем {wait_time} секунд... {str(e)}"
+                    f"⚠️ Ошибка стрима. Ждем {wait_time} секунд... {e}"
                 )
                 await asyncio.sleep(wait_time)
                 continue
-            else:
-                logger.error(f"Ошибка API после всех попыток: {str(e)}")
-                return "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
-        except AttributeError as e:
-            if "'NoneType' object" in str(e):
-                logger.error(
-                    f"Обнаружена ошибка NoneType на попытке {attempt + 1}: {e}"
-                )
-                if attempt < max_retries - 1:
-                    continue
-                return "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
-            else:
-                raise e
-
-        except Exception as e:
-            # Обработка всех остальных исключений
-            logger.error(f"Неожиданная ошибка на попытке {attempt + 1}: {str(e)}")
-            if attempt < max_retries - 1:
-                wait_time = 2 ** (attempt + 1)
-                await asyncio.sleep(wait_time)
-                continue
-            return "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
+            logger.error(f"🔴 Стрим не удался после всех попыток: {e}")
+            return

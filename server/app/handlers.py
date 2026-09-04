@@ -1,4 +1,5 @@
 import re
+import time
 import random
 import logging
 import asyncio
@@ -9,7 +10,10 @@ from aiogram.filters import CommandStart, Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.base import StorageKey
-from aiogram.exceptions import TelegramBadRequest  # Добавлен импорт исключения
+from aiogram.exceptions import (
+    TelegramBadRequest,
+    TelegramRetryAfter,
+)  # Добавлен импорт исключений
 
 from app.services.yookassa_service import yookassa_service
 from app.others.text_message import *
@@ -66,6 +70,84 @@ def handle_old_queries(answer_text: str = None):
         return wrapper
 
     return decorator
+
+
+# Минимальный интервал между обновлениями драфта — защита от флуд-лимитов Telegram
+DRAFT_UPDATE_INTERVAL = 1.0
+
+ERROR_TEXT = "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
+
+
+async def stream_to_draft(bot: Bot, chat_id: int, agen, on_first_chunk=None) -> str:
+    """
+    Показывает ответ AI «вживую»: пока генератор стрима отдает текст,
+    обновляет драфт-сообщение (текст печатается на глазах), а в конце
+    отправляет обычное сообщение с полным ответом.
+
+    - on_first_chunk — необязательная корутина, вызывается когда пришел
+      первый кусочек текста (убрать плейсхолдер, отправить фото карты и т.п.)
+    - обновления драфта не чаще DRAFT_UPDATE_INTERVAL сек — лимиты ТГ не тревожим
+    - возвращает финальный текст ответа (или ERROR_TEXT при сбое)
+    """
+    draft_id = random.randint(1, 1_000_000)
+    final_text = None
+    last_update = 0.0
+
+    try:
+        async for visible in agen:
+            final_text = visible
+
+            if on_first_chunk is not None:
+                first, on_first_chunk = on_first_chunk, None
+                try:
+                    await first()
+                except Exception:
+                    logger.exception("⚠️ on_first_chunk упал (не критично)")
+
+            now = time.monotonic()
+            if now - last_update >= DRAFT_UPDATE_INTERVAL:
+                try:
+                    await bot.send_message_draft(
+                        chat_id=chat_id, draft_id=draft_id, text=visible
+                    )
+                    last_update = now
+                except TelegramRetryAfter as e:
+                    # Поймали флуд-лимит — ждем сколько сказало ТГ и продолжаем
+                    logger.warning(f"⚠️ Флуд-лимит на драфте, ждем {e.retry_after} сек")
+                    await asyncio.sleep(e.retry_after)
+                except TelegramBadRequest as e:
+                    # Драфт не критичен, текст все равно придет финальным сообщением
+                    logger.warning(f"⚠️ Драфт не обновился: {e}")
+    except Exception as e:
+        logger.error(f"🔴 Ошибка чтения стрима: {e}")
+
+    if not final_text:
+        await bot.send_message(chat_id=chat_id, text=ERROR_TEXT)
+        return ERROR_TEXT
+
+    # Небольшая пауза, чтобы финальный драфт не слился с предыдущим
+    # и пользователь увидел допечатку хвоста
+    now = time.monotonic()
+    if now - last_update >= DRAFT_UPDATE_INTERVAL // 2:
+        try:
+            await bot.send_message_draft(
+                chat_id=chat_id, draft_id=draft_id, text=final_text
+            )
+        except TelegramBadRequest:
+            pass
+
+    # Финальное сообщение с полным ответом (снимает драфт)
+    try:
+        await bot.send_message(chat_id=chat_id, text=final_text, parse_mode="HTML")
+    except TelegramBadRequest as e:
+        if "can't parse entities" in str(e):
+            clean_response = re.sub(r"<[^>]+>", "", final_text)
+            await bot.send_message(chat_id=chat_id, text=clean_response)
+            final_text = clean_response
+        else:
+            raise
+
+    return final_text
 
 
 async def clear_tarot_keyboard_by_state(state: FSMContext, bot: Bot, user_id: int):
@@ -179,40 +261,19 @@ async def message_sleep(message: Message, state: FSMContext):
     data = await state.get_data()
     await state.clear()
 
-    response = await AI.generate_response(
+    stream = AI.generate_response_stream(
         text=data.get("text"),
         prompt="sleep",
+    )
+    await stream_to_draft(
+        message.bot,
+        message.from_user.id,
+        stream,
+        on_first_chunk=lambda: msg.delete(),
     )
     await rq.update_statistic("requests_sonnic")
 
     logger.info(f"🌙 Сон пользователя: {data.get('text')}")
-    await msg.delete()
-
-    try:
-        await message.bot.send_message_draft(
-            chat_id=message.from_user.id,
-            draft_id=random.randint(1, 1000000),
-            text=response,
-        )
-
-        await message.answer(response)
-    except TelegramBadRequest as e:
-        if "can't parse entities" in str(e):
-            clean_response = re.sub(r"<[^>]+>", "", response)
-
-            await message.bot.send_message_draft(
-                chat_id=message.from_user.id,
-                draft_id=random.randint(1, 1000000),
-                text=clean_response,
-            )
-
-            await message.answer(clean_response)
-        else:
-            await message.answer(
-                "В данный момент эта функция не доступна 😢\n"
-                "Пожалуйста, попробуйте позже."
-            )
-            raise e
 
 
 @router.callback_query(F.data.in_(["tarot", "tarot_reminder"]))
@@ -295,7 +356,7 @@ async def webapp_tarot(
             question = data.get("question")
             continuation_response_text = data.get("continuation_response_text")
 
-            response = await AI.generate_response(
+            stream = AI.generate_response_stream(
                 f"Вопрос: {question}\nКарты: {cards_list}",
                 "cards_taro",
                 continuation_response_text,
@@ -303,7 +364,7 @@ async def webapp_tarot(
             )
         else:
             # Генерируем ответ
-            response = await AI.generate_response(
+            stream = AI.generate_response_stream(
                 text=f"Вопрос: {question}\nКарты: {cards_list}",
                 prompt="cards_taro",
             )
@@ -315,49 +376,17 @@ async def webapp_tarot(
             ID сообщения: {message_id}."""
         )
 
-        # Редактируем сообщение снова, показывая результат
-        try:
-            try:
-                await bot.delete_message(chat_id=user_id, message_id=message_id)
-            except:
-                await bot.edit_message_reply_markup(reply_markup=None)
-
-            await bot.send_message_draft(
-                chat_id=user_id,
-                draft_id=random.randint(1, 1000000),
-                text=response,
-            )
-
-            await bot.send_message(
-                chat_id=user_id,
-                text=response,
-                parse_mode="HTML",
-            )
-
-        except TelegramBadRequest as e:
-            if "can't parse entities" in str(e):
-                response = re.sub(r"<[^>]+>", "", response)
-
-                await bot.send_message_draft(
-                    chat_id=user_id,
-                    draft_id=random.randint(1, 1000000),
-                    text=response,
-                )
-
-                await bot.send_message(
-                    chat_id=user_id,
-                    text=response,
-                    parse_mode="HTML",
-                )
-            else:
-                await bot.send_message(
-                    chat_id=user_id,
-                    text=(
-                        "В данный момент эта функция не доступна 😢\n"
-                        "Пожалуйста, попробуйте позже."
-                    ),
-                )
-                raise e
+        # Показываем трактовку «вживую»: драфт печатается по мере генерации,
+        # в конце приходит обычное сообщение с полным текстом.
+        # Сообщение с кнопкой выбора карт удаляем, когда пришел первый кусочек
+        response = await stream_to_draft(
+            bot,
+            user_id,
+            stream,
+            on_first_chunk=lambda: bot.delete_message(
+                chat_id=user_id, message_id=message_id
+            ),
+        )
 
         # # Генерируем продолжение
         # continuation_response_text = f"Вопрос: {question}\n\n{response}"
@@ -460,44 +489,21 @@ async def callback_card_day(callback: CallbackQuery, state: FSMContext):
         selected_card = random.choice(tarot_deck)
         file_id = file_id_cards[selected_card]
 
-        response = await AI.generate_response(
+        async def send_card_photo():
+            await msg.delete()
+            await callback.message.answer_photo(photo=file_id, parse_mode="HTML")
+
+        stream = AI.generate_response_stream(
             text=f"Карта дня: {selected_card}",
             prompt="card_day",
         )
 
-        await msg.delete()
-
-        if response != (
-            "В данный момент эта функция не доступна 😢\n"
-            "Пожалуйста, попробуйте позже."
-        ):
-            await callback.message.answer_photo(photo=file_id, parse_mode="HTML")
-
-        try:
-            await callback.bot.send_message_draft(
-                chat_id=callback.from_user.id,
-                draft_id=random.randint(1, 1000000),
-                text=response,
-            )
-
-            await callback.message.answer(response)
-        except TelegramBadRequest as e:
-            if "can't parse entities" in str(e):
-                clean_response = re.sub(r"<[^>]+>", "", response)
-
-                await callback.bot.send_message_draft(
-                    chat_id=callback.from_user.id,
-                    draft_id=random.randint(1, 1000000),
-                    text=clean_response,
-                )
-
-                await callback.message.answer(clean_response)
-            else:
-                await callback.message.answer(
-                    "В данный момент эта функция не доступна 😢\n"
-                    "Пожалуйста, попробуйте позже."
-                )
-                raise e
+        await stream_to_draft(
+            callback.bot,
+            callback.from_user.id,
+            stream,
+            on_first_chunk=send_card_photo,
+        )
 
         if callback.data == "card_day_reminder":
             await asyncio.sleep(5)
