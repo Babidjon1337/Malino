@@ -68,6 +68,7 @@ async def stream_to_draft(
     agen,
     wait_frames: list[str] | None = None,
     on_first_chunk=None,
+    new_draft_after_first: bool = False,
 ) -> str:
     """
     Показывает ответ AI «вживую» одним драфтом:
@@ -83,6 +84,8 @@ async def stream_to_draft(
     - wait_frames — кадры ожидания (sleep_wait_frames / tarot_wait_frames /
       card_day_wait_frames из text_message.py)
     - on_first_chunk — корутина, вызывается на первом кусочке (например, фото карты)
+    - new_draft_after_first — начать ответ НОВЫМ драфтом после on_first_chunk
+      (для карты дня: фото сбрасывает драфт ожидания, ответ идёт под фото)
     - возвращает финальный текст ответа (или ERROR_TEXT при сбое)
     """
     draft_id = random.randint(1, 1_000_000)
@@ -132,6 +135,11 @@ async def stream_to_draft(
                     except Exception:
                         logger.exception("⚠️ on_first_chunk упал (не критично)")
                     on_first_chunk = None
+                    # on_first_chunk (например, фото карты) отправил сообщение —
+                    # оно сбросило драфт ожидания. Берём новый draft_id, чтобы
+                    # ответ печатался уже ПОД фото, а не над ним.
+                    if new_draft_after_first:
+                        draft_id = random.randint(1, 1_000_000)
 
             if plain:
                 elapsed = time.monotonic() - started

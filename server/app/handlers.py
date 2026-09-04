@@ -409,6 +409,7 @@ async def callback_card_day(callback: CallbackQuery, state: FSMContext):
             stream,
             wait_frames=card_day_wait_frames,
             on_first_chunk=send_card_photo,
+            new_draft_after_first=True,
         )
 
         if callback.data == "card_day_reminder":
