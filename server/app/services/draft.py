@@ -13,10 +13,14 @@ logger = logging.getLogger(__name__)
 
 # Драфт — «живая» печать ответа. Телеграм держит драфт как 30-секундный
 # превью, поэтому весь текст нужно успеть напечатать за это окно.
-DRAFT_TICK = 0.7  # как часто обновляем драфт, сек
+DRAFT_TICK = 0.6  # как часто обновляем драфт, сек
 DRAFT_MIN_CHARS = 60  # минимум символов за тик (темп для коротких ответов)
 DRAFT_TOTAL_SECONDS = 20  # за столько секунд печать должна закончиться
-WAIT_TICK = 1.5  # с каким шагом крутим кадры ожидания в драфте
+# Печать кадров ожидания: буквы добавляются мелкими шагами, потом кадр
+# «держится» и начинается следующий.
+WAIT_TYPE_TICK = 0.35  # шаг печати букв в кадре ожидания, сек
+WAIT_TYPE_CHARS = 8  # сколько символов добавляем за шаг
+WAIT_HOLD = 1  # держим допечатанный кадр перед следующим
 
 ERROR_TEXT = "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
 
@@ -38,28 +42,34 @@ def _snap_to_word(text: str, pos: int) -> int:
     return best + 1 if best > 0 else pos
 
 
-async def _animate_wait_draft(
-    bot: Bot, chat_id: int, draft_id: int, frames: list[str]
-):
+async def _animate_wait_draft(bot: Bot, chat_id: int, draft_id: int, frames: list[str]):
     """
-    Крутит кадры ожидания в том же драфте, в который потом польется ответ:
-    один draft_id — плавный переход «ждём → печатаем» без лишних сообщений.
+    Печатает кадры ожидания по буквам (мелкими шагами), держит готовый кадр
+    и переходит к следующему. Тот же draft_id, что и для ответа — переход
+    «ждём → печатаем» остаётся плавным, без лишних сообщений.
     """
     i = 0
     while True:
-        try:
-            await bot.send_message_draft(
-                chat_id=chat_id,
-                draft_id=draft_id,
-                text=frames[i % len(frames)],
-                parse_mode=None,
-            )
-        except TelegramRetryAfter as e:
-            await asyncio.sleep(e.retry_after)
-        except Exception:
-            return
+        frame = frames[i % len(frames)]
+        # печать кадра маленькими кусочками
+        pos = 0
+        while pos < len(frame):
+            pos = min(len(frame), pos + WAIT_TYPE_CHARS)
+            try:
+                await bot.send_message_draft(
+                    chat_id=chat_id,
+                    draft_id=draft_id,
+                    text=frame[:pos],
+                    parse_mode=None,
+                )
+            except TelegramRetryAfter as e:
+                await asyncio.sleep(e.retry_after)
+            except Exception:
+                return
+            await asyncio.sleep(WAIT_TYPE_TICK)
+        # держим допечатанный кадр перед следующим
+        await asyncio.sleep(WAIT_HOLD)
         i += 1
-        await asyncio.sleep(WAIT_TICK)
 
 
 async def stream_to_draft(
@@ -84,8 +94,6 @@ async def stream_to_draft(
     - wait_frames — кадры ожидания (sleep_wait_frames / tarot_wait_frames /
       card_day_wait_frames из text_message.py)
     - on_first_chunk — корутина, вызывается на первом кусочке (например, фото карты)
-    - new_draft_after_first — начать ответ НОВЫМ драфтом после on_first_chunk
-      (для карты дня: фото сбрасывает драфт ожидания, ответ идёт под фото)
     - возвращает финальный текст ответа (или ERROR_TEXT при сбое)
     """
     draft_id = random.randint(1, 1_000_000)
