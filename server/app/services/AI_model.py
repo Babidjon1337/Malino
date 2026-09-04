@@ -12,6 +12,10 @@ class ChineseInResponseError(Exception):
     """Модель вернула китайские иероглифы — запрос нужно повторить."""
 
 
+class EmptyResponseError(Exception):
+    """Стрим закончился, а текста так и не пришло — запрос нужно повторить."""
+
+
 # Настройка логирования
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -151,8 +155,10 @@ async def generate_response_stream(text, prompt, *args):
                         "sort": "throughput",
                         "allow_fallbacks": True,
                     },
-                    # Модель может думать, но размышления не попадают в ответ
+                    # Размышления отключены полностью: ответ приходит быстрее
+                    # и блок <think> в принципе не может попасть в текст
                     "reasoning": {
+                        "enabled": False,
                         "exclude": True,
                     },
                 },
@@ -187,7 +193,19 @@ async def generate_response_stream(text, prompt, *args):
                 yield visible
 
             if not yielded:
-                logger.warning("⚠️ Стрим: пустой ответ от API")
+                # Провайдер отдал 200, но текста не прислал — перезапрашиваем
+                raise EmptyResponseError()
+            return
+
+        except EmptyResponseError:
+            if attempt < max_retries - 1:
+                wait_time = 2 ** (attempt + 1)  # 2, 4, 8 секунды
+                logger.warning(
+                    f"⚠️ Стрим: пустой ответ от API. Ждем {wait_time} сек и перезапрашиваем"
+                )
+                await asyncio.sleep(wait_time)
+                continue
+            logger.error("🔴 Стрим: пустой ответ от API после всех попыток")
             return
 
         except ChineseInResponseError:

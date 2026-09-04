@@ -1,4 +1,5 @@
 import re
+import html
 import time
 import random
 import logging
@@ -72,82 +73,157 @@ def handle_old_queries(answer_text: str = None):
     return decorator
 
 
-# Минимальный интервал между обновлениями драфта — защита от флуд-лимитов Telegram
-DRAFT_UPDATE_INTERVAL = 1.0
+# Драфт — «живая» печать ответа. Телеграм держит драфт как 30-секундный
+# превью, поэтому весь текст нужно успеть напечатать за это окно.
+DRAFT_TICK = 0.7  # как часто обновляем драфт, сек
+DRAFT_MIN_CHARS = 60  # минимум символов за тик (темп для коротких ответов)
+DRAFT_TOTAL_SECONDS = 20  # за столько секунд печать должна закончиться
 
 ERROR_TEXT = "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
 
 
-async def stream_to_draft(bot: Bot, chat_id: int, agen, on_first_chunk=None) -> str:
+def _plain(text: str) -> str:
     """
-    Показывает ответ AI «вживую»: пока генератор стрима отдает текст,
-    обновляет драфт-сообщение (текст печатается на глазах), а в конце
-    отправляет обычное сообщение с полным ответом.
+    Текст для драфта: без HTML-тегов. Драфт разметку не форматирует,
+    поэтому теги в нем видны как обычный текст (<b>Карта дня</b>).
+    """
+    return html.unescape(re.sub(r"<[^>]+>", "", text))
 
-    - on_first_chunk — необязательная корутина, вызывается когда пришел
-      первый кусочек текста (убрать плейсхолдер, отправить фото карты и т.п.)
-    - обновления драфта не чаще DRAFT_UPDATE_INTERVAL сек — лимиты ТГ не тревожим
+
+def _snap_to_word(text: str, pos: int) -> int:
+    """Сдвигает границу показа к концу слова, чтобы не рвать слова посередине."""
+    if pos >= len(text):
+        return len(text)
+    start = max(0, pos - 30)
+    best = max(text.rfind(" ", start, pos), text.rfind("\n", start, pos))
+    return best + 1 if best > 0 else pos
+
+
+async def stream_to_draft(
+    bot: Bot,
+    chat_id: int,
+    agen,
+    placeholder_id: int | None = None,
+    on_first_chunk=None,
+) -> str:
+    """
+    Показывает ответ AI «вживую»: текст допечатывается в драфт-сообщении
+    ровным читаемым темпом, а в конце приходит обычное сообщение с полным
+    ответом (оно же убирает драфт).
+
+    Модель генерирует в разы быстрее, чем человек читает, поэтому темп
+    показа задают тики, а не скорость провайдера: на каждом тике остаток
+    делится на число оставшихся тиков до DRAFT_TOTAL_SECONDS. Так печать
+    идет плавно и всегда успевает закончиться внутри 30-секундного окна.
+
+    - placeholder_id — сообщение «генерирую...», убирается на первом кусочке
+    - on_first_chunk — корутина, вызывается на первом кусочке (например, фото карты)
     - возвращает финальный текст ответа (или ERROR_TEXT при сбое)
     """
     draft_id = random.randint(1, 1_000_000)
-    final_text = None
-    last_update = 0.0
+    raw_text = ""  # последний накопленный ответ (с HTML-разметкой)
+    stream_done = False
+    stream_error = None
+
+    async def reader():
+        nonlocal raw_text, stream_done, stream_error
+        try:
+            async for visible in agen:
+                raw_text = visible
+        except Exception as e:
+            stream_error = e
+        finally:
+            stream_done = True
+
+    async def drop_placeholder():
+        nonlocal placeholder_id
+        if placeholder_id is None:
+            return
+        msg_id, placeholder_id = placeholder_id, None
+        try:
+            await bot.delete_message(chat_id=chat_id, message_id=msg_id)
+        except TelegramBadRequest as e:
+            logger.warning(f"⚠️ Не удалось убрать сообщение-заглушку: {e}")
+
+    reader_task = asyncio.create_task(reader())
+    shown = 0
+    started = None
 
     try:
-        async for visible in agen:
-            final_text = visible
+        while True:
+            plain = _plain(raw_text).strip()
 
-            if on_first_chunk is not None:
-                first, on_first_chunk = on_first_chunk, None
-                try:
-                    await first()
-                except Exception:
-                    logger.exception("⚠️ on_first_chunk упал (не критично)")
+            if plain and started is None:
+                # Первый кусочек текста: убираем заглушку и отдаем управление хендлеру
+                started = time.monotonic()
+                await drop_placeholder()
+                if on_first_chunk is not None:
+                    try:
+                        await on_first_chunk()
+                    except Exception:
+                        logger.exception("⚠️ on_first_chunk упал (не критично)")
+                    on_first_chunk = None
 
-            now = time.monotonic()
-            if now - last_update >= DRAFT_UPDATE_INTERVAL:
-                try:
-                    await bot.send_message_draft(
-                        chat_id=chat_id, draft_id=draft_id, text=visible
-                    )
-                    last_update = now
-                except TelegramRetryAfter as e:
-                    # Поймали флуд-лимит — ждем сколько сказало ТГ и продолжаем
-                    logger.warning(f"⚠️ Флуд-лимит на драфте, ждем {e.retry_after} сек")
-                    await asyncio.sleep(e.retry_after)
-                except TelegramBadRequest as e:
-                    # Драфт не критичен, текст все равно придет финальным сообщением
-                    logger.warning(f"⚠️ Драфт не обновился: {e}")
-    except Exception as e:
-        logger.error(f"🔴 Ошибка чтения стрима: {e}")
+            if plain:
+                elapsed = time.monotonic() - started
+                behind = len(plain) - shown
+                # Сколько тиков осталось до конца отведенного времени
+                ticks_left = max(1, int((DRAFT_TOTAL_SECONDS - elapsed) / DRAFT_TICK))
+                step = max(DRAFT_MIN_CHARS, -(-behind // ticks_left))  # ceil
+                out_of_time = elapsed >= DRAFT_TOTAL_SECONDS
 
-    if not final_text:
+                if out_of_time or (stream_done and behind <= step):
+                    target = len(plain)  # хвост показываем целиком
+                else:
+                    target = _snap_to_word(plain, shown + step)
+
+                if target > shown:
+                    shown = target
+                    try:
+                        await bot.send_message_draft(
+                            chat_id=chat_id, draft_id=draft_id, text=plain[:shown]
+                        )
+                    except TelegramRetryAfter as e:
+                        logger.warning(
+                            f"⚠️ Флуд-лимит на драфте, ждем {e.retry_after} сек"
+                        )
+                        await asyncio.sleep(e.retry_after)
+                    except TelegramBadRequest as e:
+                        # Драфт не критичен: текст все равно придет сообщением
+                        logger.warning(f"⚠️ Драфт не обновился: {e}")
+
+                if out_of_time or (stream_done and shown >= len(plain)):
+                    break
+            elif stream_done:
+                break
+
+            await asyncio.sleep(DRAFT_TICK)
+    finally:
+        # Дочитываем остаток потока, чтобы отправить полный ответ
+        try:
+            await reader_task
+        except Exception as e:
+            logger.error(f"🔴 Ошибка чтения стрима: {e}")
+
+    if stream_error:
+        logger.error(f"🔴 Стрим завершился с ошибкой: {stream_error}")
+
+    if not raw_text.strip():
+        await drop_placeholder()
         await bot.send_message(chat_id=chat_id, text=ERROR_TEXT)
         return ERROR_TEXT
 
-    # Небольшая пауза, чтобы финальный драфт не слился с предыдущим
-    # и пользователь увидел допечатку хвоста
-    now = time.monotonic()
-    if now - last_update >= DRAFT_UPDATE_INTERVAL // 2:
-        try:
-            await bot.send_message_draft(
-                chat_id=chat_id, draft_id=draft_id, text=final_text
-            )
-        except TelegramBadRequest:
-            pass
-
-    # Финальное сообщение с полным ответом (снимает драфт)
+    # Финальное сообщение с полным ответом — оно же убирает драфт
     try:
-        await bot.send_message(chat_id=chat_id, text=final_text, parse_mode="HTML")
+        await bot.send_message(chat_id=chat_id, text=raw_text, parse_mode="HTML")
     except TelegramBadRequest as e:
         if "can't parse entities" in str(e):
-            clean_response = re.sub(r"<[^>]+>", "", final_text)
+            clean_response = _plain(raw_text)
             await bot.send_message(chat_id=chat_id, text=clean_response)
-            final_text = clean_response
-        else:
-            raise
+            return clean_response
+        raise
 
-    return final_text
+    return raw_text
 
 
 async def clear_tarot_keyboard_by_state(state: FSMContext, bot: Bot, user_id: int):
@@ -269,7 +345,7 @@ async def message_sleep(message: Message, state: FSMContext):
         message.bot,
         message.from_user.id,
         stream,
-        on_first_chunk=lambda: msg.delete(),
+        placeholder_id=msg.message_id,
     )
     await rq.update_statistic("requests_sonnic")
 
@@ -378,14 +454,12 @@ async def webapp_tarot(
 
         # Показываем трактовку «вживую»: драфт печатается по мере генерации,
         # в конце приходит обычное сообщение с полным текстом.
-        # Сообщение с кнопкой выбора карт удаляем, когда пришел первый кусочек
+        # Сообщение с кнопкой выбора карт убираем, когда пришел первый кусочек
         response = await stream_to_draft(
             bot,
             user_id,
             stream,
-            on_first_chunk=lambda: bot.delete_message(
-                chat_id=user_id, message_id=message_id
-            ),
+            placeholder_id=message_id,
         )
 
         # # Генерируем продолжение
@@ -490,7 +564,6 @@ async def callback_card_day(callback: CallbackQuery, state: FSMContext):
         file_id = file_id_cards[selected_card]
 
         async def send_card_photo():
-            await msg.delete()
             await callback.message.answer_photo(photo=file_id, parse_mode="HTML")
 
         stream = AI.generate_response_stream(
@@ -502,6 +575,7 @@ async def callback_card_day(callback: CallbackQuery, state: FSMContext):
             callback.bot,
             callback.from_user.id,
             stream,
+            placeholder_id=msg.message_id,
             on_first_chunk=send_card_photo,
         )
 
