@@ -164,6 +164,13 @@ async def generate_response(text, prompt, *args):
 
             return response
 
+        except AuthenticationError as e:
+            # 401: ключ недействителен — повторять бессмысленно
+            logger.error(
+                f"🔴 OpenRouter: неверный API-ключ (401). Проверьте AI_TOKEN в .env: {e}"
+            )
+            return "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
+
         except RateLimitError as e:
             if attempt < max_retries - 1:  # Не ждем после последней попытки
                 wait_time = 2 ** (attempt + 3)  # 8, 16, 32, 64 секунды
