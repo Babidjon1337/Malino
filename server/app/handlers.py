@@ -11,7 +11,7 @@ from aiogram.fsm.storage.base import StorageKey
 from aiogram.exceptions import TelegramBadRequest  # Добавлен импорт исключения
 
 from app.services.yookassa_service import yookassa_service
-from app.services.draft import stream_to_draft, typing_frames
+from app.services.draft import stream_to_draft
 from app.others.text_message import *
 import app.services.AI_model as AI
 import app.keyboards as kb
@@ -171,12 +171,6 @@ async def callback_sleep(callback: CallbackQuery, state: FSMContext):
 
 @router.message(sleep_data.text)
 async def message_sleep(message: Message, state: FSMContext):
-    frames = typing_frames(
-        "Проникаю в туман сновидений",
-        "✨ Раскрываю скрытые послания вашей души из ночного путешествия",
-    )
-    msg = await message.answer(frames[0])
-
     await state.update_data(text=message.text)
     data = await state.get_data()
     await state.clear()
@@ -189,8 +183,7 @@ async def message_sleep(message: Message, state: FSMContext):
         message.bot,
         message.from_user.id,
         stream,
-        placeholder_id=msg.message_id,
-        placeholder_frames=frames,
+        wait_frames=sleep_wait_frames,
     )
     await rq.update_statistic("requests_sonnic")
 
@@ -263,17 +256,11 @@ async def webapp_tarot(
         tarot_new_continuation = data.get("tarot_new_continuation", False)
 
         await rq.take_away_tarot(user_id)
-        # Редактируем исходное сообщение вместо удаления
-        frames = typing_frames(
-            "Карты настраиваются на ваш запрос",
-            "🃏 Ответ придет через мгновение",
-        )
-        await bot.edit_message_text(
-            chat_id=user_id,
-            message_id=message_id,
-            text=frames[0],
-            parse_mode="HTML",
-        )
+        # Убираем сообщение с выбранными картами — дальше показывает драфт
+        try:
+            await bot.delete_message(chat_id=user_id, message_id=message_id)
+        except TelegramBadRequest:
+            pass
 
         if tarot_new_continuation:
             # Это новый продолженный расклад таро.
@@ -303,13 +290,11 @@ async def webapp_tarot(
 
         # Показываем трактовку «вживую»: драфт печатается по мере генерации,
         # в конце приходит обычное сообщение с полным текстом.
-        # Сообщение с кнопкой выбора карт убираем, когда пришел первый кусочек
         response = await stream_to_draft(
             bot,
             user_id,
             stream,
-            placeholder_id=message_id,
-            placeholder_frames=frames,
+            wait_frames=tarot_wait_frames,
         )
 
         # # Генерируем продолжение
@@ -405,11 +390,6 @@ async def callback_card_day(callback: CallbackQuery, state: FSMContext):
             pass
 
     if await rq.check_card_day(callback.from_user.id):
-        frames = typing_frames(
-            "Соединяюсь с космической энергией",
-            "🌌 Раскрываю тайны Вселенной для вашей карты дня",
-        )
-        msg = await callback.message.answer(frames[0])
         await rq.update_statistic("requests_map_day")
 
         selected_card = random.choice(tarot_deck)
@@ -427,8 +407,7 @@ async def callback_card_day(callback: CallbackQuery, state: FSMContext):
             callback.bot,
             callback.from_user.id,
             stream,
-            placeholder_id=msg.message_id,
-            placeholder_frames=frames,
+            wait_frames=card_day_wait_frames,
             on_first_chunk=send_card_photo,
         )
 

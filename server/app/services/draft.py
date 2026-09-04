@@ -4,6 +4,7 @@ import time
 import random
 import asyncio
 import logging
+import contextlib
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
@@ -15,19 +16,9 @@ logger = logging.getLogger(__name__)
 DRAFT_TICK = 0.7  # как часто обновляем драфт, сек
 DRAFT_MIN_CHARS = 60  # минимум символов за тик (темп для коротких ответов)
 DRAFT_TOTAL_SECONDS = 20  # за столько секунд печать должна закончиться
-PLACEHOLDER_TICK = 1.5  # с каким шагом крутим анимацию сообщения-заглушки
+WAIT_TICK = 1.5  # с каким шагом крутим кадры ожидания в драфте
 
 ERROR_TEXT = "В данный момент эта функция не доступна 😢\nПожалуйста, попробуйте позже."
-
-
-def typing_frames(first_line: str, second_line: str) -> list[str]:
-    """
-    Кадры анимации «печатает...» для сообщения-заглушки:
-    к первой строке добавляются точки 0-3, вторая строка статична.
-    """
-    return [
-        f"{first_line}{dots}\n{second_line}" for dots in ("", ".", "..", "...")
-    ]
 
 
 def _plain(text: str) -> str:
@@ -47,47 +38,50 @@ def _snap_to_word(text: str, pos: int) -> int:
     return best + 1 if best > 0 else pos
 
 
-async def _animate_placeholder(
-    bot: Bot, chat_id: int, message_id: int, frames: list[str]
+async def _animate_wait_draft(
+    bot: Bot, chat_id: int, draft_id: int, frames: list[str]
 ):
-    """Крутит кадры анимации в сообщении-заглушке, пока его не удалят."""
+    """
+    Крутит кадры ожидания в том же драфте, в который потом польется ответ:
+    один draft_id — плавный переход «ждём → печатаем» без лишних сообщений.
+    """
     i = 0
     while True:
         try:
-            await bot.edit_message_text(
-                chat_id=chat_id, message_id=message_id, text=frames[i % len(frames)]
+            await bot.send_message_draft(
+                chat_id=chat_id,
+                draft_id=draft_id,
+                text=frames[i % len(frames)],
+                parse_mode=None,
             )
-        except TelegramBadRequest as e:
-            if "message is not modified" in str(e):
-                pass  # такой же кадр — просто пропускаем
-            else:
-                return  # сообщение удалили или оно недоступно
+        except TelegramRetryAfter as e:
+            await asyncio.sleep(e.retry_after)
         except Exception:
             return
         i += 1
-        await asyncio.sleep(PLACEHOLDER_TICK)
+        await asyncio.sleep(WAIT_TICK)
 
 
 async def stream_to_draft(
     bot: Bot,
     chat_id: int,
     agen,
-    placeholder_id: int | None = None,
-    placeholder_frames: list[str] | None = None,
+    wait_frames: list[str] | None = None,
     on_first_chunk=None,
 ) -> str:
     """
-    Показывает ответ AI «вживую»: текст допечатывается в драфт-сообщении
-    ровным читаемым темпом, а в конце приходит обычное сообщение с полным
-    ответом (оно же убирает драфт).
+    Показывает ответ AI «вживую» одним драфтом:
+    1) пока ждем первый токен — драфт крутит кадры ожидания (wait_frames);
+    2) как только текст пошел — в тот же драфт ровно печатается ответ;
+    3) в конце приходит обычное сообщение с полным ответом — оно убирает драфт.
 
     Модель генерирует в разы быстрее, чем человек читает, поэтому темп
     показа задают тики, а не скорость провайдера: на каждом тике остаток
     делится на число оставшихся тиков до DRAFT_TOTAL_SECONDS. Так печать
     идет плавно и всегда успевает закончиться внутри 30-секундного окна.
 
-    - placeholder_id — сообщение «генерирую...»; убирается на первом кусочке
-    - placeholder_frames — кадры анимации для этого сообщения (typing_frames)
+    - wait_frames — кадры ожидания (sleep_wait_frames / tarot_wait_frames /
+      card_day_wait_frames из text_message.py)
     - on_first_chunk — корутина, вызывается на первом кусочке (например, фото карты)
     - возвращает финальный текст ответа (или ERROR_TEXT при сбое)
     """
@@ -97,9 +91,9 @@ async def stream_to_draft(
     stream_error = None
     animator = None
 
-    if placeholder_frames and placeholder_id is not None:
+    if wait_frames:
         animator = asyncio.create_task(
-            _animate_placeholder(bot, chat_id, placeholder_id, placeholder_frames)
+            _animate_wait_draft(bot, chat_id, draft_id, wait_frames)
         )
 
     async def reader():
@@ -112,18 +106,13 @@ async def stream_to_draft(
         finally:
             stream_done = True
 
-    async def drop_placeholder():
-        nonlocal placeholder_id, animator
+    async def stop_animator():
+        nonlocal animator
         if animator is not None:
             animator.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await animator
             animator = None
-        if placeholder_id is None:
-            return
-        msg_id, placeholder_id = placeholder_id, None
-        try:
-            await bot.delete_message(chat_id=chat_id, message_id=msg_id)
-        except TelegramBadRequest as e:
-            logger.warning(f"⚠️ Не удалось убрать сообщение-заглушку: {e}")
 
     reader_task = asyncio.create_task(reader())
     shown = 0
@@ -134,9 +123,9 @@ async def stream_to_draft(
             plain = _plain(raw_text).strip()
 
             if plain and started is None:
-                # Первый кусочек текста: останавливаем анимацию, убираем заглушку
+                # Первый кусочек: останавливаем ожидание и забираем драфт себе
                 started = time.monotonic()
-                await drop_placeholder()
+                await stop_animator()
                 if on_first_chunk is not None:
                     try:
                         await on_first_chunk()
@@ -161,8 +150,8 @@ async def stream_to_draft(
                     shown = target
                     try:
                         # parse_mode=None: драфт показывает чистый текст;
-                        # в новых aiogram драфт иначе наследует HTML-дефолт бота,
-                        # и незакрытые/случайные теги ломали бы обновление
+                        # иначе драфт наследует HTML-дефолт бота, и
+                        # незакрытые/случайные теги ломали бы обновление
                         await bot.send_message_draft(
                             chat_id=chat_id,
                             draft_id=draft_id,
@@ -185,8 +174,7 @@ async def stream_to_draft(
 
             await asyncio.sleep(DRAFT_TICK)
     finally:
-        if animator is not None:
-            animator.cancel()
+        await stop_animator()
         # Дочитываем остаток потока, чтобы отправить полный ответ
         try:
             await reader_task
@@ -197,7 +185,6 @@ async def stream_to_draft(
         logger.error(f"🔴 Стрим завершился с ошибкой: {stream_error}")
 
     if not raw_text.strip():
-        await drop_placeholder()
         await bot.send_message(chat_id=chat_id, text=ERROR_TEXT)
         return ERROR_TEXT
 
